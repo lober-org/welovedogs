@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Menu, X, User, Heart, ChevronDown, LogOut, Settings } from "lucide-react";
+import { Menu, X, User, Heart, ChevronDown, LogOut, Wallet } from "lucide-react";
 import { useState, useEffect } from "react";
 import {
   DropdownMenu,
@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useRouter } from "next/navigation";
 import { createBrowserClient } from "@/lib/supabase/client";
+import { useWalletsKit } from "@/hooks/useWalletsKit";
+import { CopyButton } from "@/components/ui/copy-button";
 
 export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -21,6 +23,7 @@ export function Header() {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const supabase = createBrowserClient();
+  const { address, openModalAndConnect, disconnect, isConnected } = useWalletsKit();
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -80,7 +83,7 @@ export function Header() {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-green-700 bg-green-600 shadow-md">
       <div className="mx-auto flex h-16 md:h-20 max-w-[1600px] items-center justify-between px-3 md:px-4 lg:px-6 gap-2">
-        <Link href="/" className="flex-shrink-0 hover:opacity-90 transition-opacity">
+        <Link href="/" className="shrink-0 hover:opacity-90 transition-opacity">
           <img
             src="/images/design-mode/header-20logo-202.png"
             alt="WE DOGS"
@@ -117,7 +120,7 @@ export function Header() {
         </nav>
 
         {/* Desktop Actions */}
-        <div className="hidden lg:flex items-center gap-2 flex-shrink-0">
+        <div className="hidden lg:flex items-center gap-2 shrink-0">
           {!loading && user && userType ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -130,8 +133,52 @@ export function Header() {
                   <ChevronDown className="ml-1 h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuContent align="end" className="w-64">
                 <div className="px-2 py-1.5 text-sm font-medium">{user.email}</div>
+                <DropdownMenuSeparator />
+
+                {/* Wallet Section */}
+                <div className="px-2 py-1.5">
+                  {isConnected ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Wallet className="h-4 w-4 text-green-600" />
+                          <span className="text-xs font-medium text-gray-700">
+                            Wallet Connected
+                          </span>
+                        </div>
+                        <CopyButton value={address || ""} className="h-6 w-6" />
+                      </div>
+                      <div className="text-xs font-mono text-gray-600 break-all px-1">
+                        {address}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full text-xs h-7"
+                        onClick={() => {
+                          disconnect();
+                        }}
+                      >
+                        Disconnect Wallet
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs h-7"
+                      onClick={openModalAndConnect}
+                    >
+                      <Wallet className="h-3 w-3 mr-1.5" />
+                      Connect Wallet
+                    </Button>
+                  )}
+                </div>
+
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
                   <Link href={`/profile/${userType}`} className="cursor-pointer">
@@ -173,6 +220,7 @@ export function Header() {
         <div className="flex items-center gap-1.5 lg:hidden">
           {!loading && user && userType ? (
             <button
+              type="button"
               onClick={() => router.push(`/profile/${userType}`)}
               className="flex items-center justify-center h-8 w-8 text-white hover:bg-green-700 rounded-md transition-colors"
               aria-label="My profile"
@@ -181,6 +229,7 @@ export function Header() {
             </button>
           ) : (
             <button
+              type="button"
               onClick={() => router.push("/sign-in")}
               className="flex items-center justify-center h-8 w-8 text-white hover:bg-green-700 rounded-md transition-colors"
               aria-label="Sign in"
@@ -189,6 +238,7 @@ export function Header() {
             </button>
           )}
           <button
+            type="button"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="text-white p-1.5 hover:bg-green-700 rounded-lg transition-colors"
             aria-label="Toggle menu"

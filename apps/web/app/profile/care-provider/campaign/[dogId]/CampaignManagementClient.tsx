@@ -16,11 +16,14 @@ import {
   Save,
   X,
   ExternalLink,
+  Shield,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { CreateEscrowModal } from "@/components/CreateEscrowModal";
 
 interface Campaign {
+  id: string;
   dogId: string;
   dogName: string;
   dogImage: string;
@@ -29,6 +32,9 @@ interface Campaign {
   goal: number;
   headline: string;
   status: string;
+  escrowContractId?: string | null;
+  stellarAddress?: string | null; // Campaign's stellar_address field
+  careProviderStellarAddress?: string | null; // Care provider's stellar_address
 }
 
 interface Update {
@@ -76,6 +82,10 @@ export default function CampaignManagementClient({
   const [editHeadline, setEditHeadline] = useState(campaign.headline);
   const [sortBy, setSortBy] = useState<"date" | "amount">("date");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [isEscrowModalOpen, setIsEscrowModalOpen] = useState(false);
+  const [escrowContractId, setEscrowContractId] = useState<string | null>(
+    campaign.escrowContractId || null
+  );
 
   const handleSaveHeadline = () => {
     setHeadline(editHeadline);
@@ -133,11 +143,17 @@ export default function CampaignManagementClient({
               />
             </div>
             <div className="flex-1">
-              <div className="flex items-center gap-3 mb-2">
+              <div className="flex items-center gap-3 mb-2 flex-wrap">
                 <h1 className="text-3xl font-bold">{campaign.dogName}'s Campaign</h1>
                 <Badge variant={campaign.status === "Active" ? "default" : "secondary"}>
                   {campaign.status}
                 </Badge>
+                {escrowContractId && (
+                  <Badge variant="outline" className="gap-1">
+                    <Shield className="h-3 w-3" />
+                    Escrow Active
+                  </Badge>
+                )}
               </div>
               {isEditingHeadline ? (
                 <div className="flex gap-2 items-center">
@@ -164,6 +180,48 @@ export default function CampaignManagementClient({
             </div>
           </div>
         </div>
+
+        {/* Escrow Section */}
+        {campaign.stellarAddress && (
+          <Card className="mb-6">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                Escrow Account
+              </CardTitle>
+              {!escrowContractId && (
+                <Button onClick={() => setIsEscrowModalOpen(true)} variant="default" size="sm">
+                  <Shield className="mr-2 h-4 w-4" />
+                  Create Escrow
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent>
+              {escrowContractId ? (
+                <div className="space-y-2">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Escrow Contract ID</Label>
+                    <p className="font-mono text-sm break-all mt-1">{escrowContractId}</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Stellar Address</Label>
+                    <p className="font-mono text-sm break-all mt-1">{campaign.stellarAddress}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-sm text-muted-foreground mb-4">
+                    No escrow account has been created for this campaign yet.
+                  </p>
+                  <Button onClick={() => setIsEscrowModalOpen(true)} variant="outline">
+                    <Shield className="mr-2 h-4 w-4" />
+                    Create Escrow Account
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -371,6 +429,23 @@ export default function CampaignManagementClient({
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Escrow Creation Modal */}
+        {campaign.stellarAddress && (
+          <CreateEscrowModal
+            open={isEscrowModalOpen}
+            onOpenChange={setIsEscrowModalOpen}
+            campaignId={campaign.id}
+            dogName={campaign.dogName}
+            careProviderAddress={campaign.careProviderStellarAddress || campaign.stellarAddress}
+            campaignStellarAddress={campaign.stellarAddress}
+            goal={campaign.goal}
+            onSuccess={(contractId) => {
+              setEscrowContractId(contractId);
+              setIsEscrowModalOpen(false);
+            }}
+          />
+        )}
       </div>
     </div>
   );

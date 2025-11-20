@@ -1,15 +1,22 @@
 "use client";
 
-import { useState } from "react";
-import { Heart, Shield, Zap } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Heart, Shield, Zap, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
+import { useEscrow } from "@/hooks/useEscrow";
+import { useDonation } from "@/hooks/useDonation";
+import { useWalletsKit } from "@/hooks/useWalletsKit";
+import { createBrowserClient } from "@/lib/supabase/client";
 
 interface DonationWidgetProps {
   dogName: string;
   raised: number;
   spent: number;
   fundsNeededFor: Array<{ icon: string; label: string }> | string[];
+  campaignId?: string;
+  careProviderAddress?: string;
+  goal?: number;
 }
 
 export function StickyDonationWidget({
@@ -17,25 +24,159 @@ export function StickyDonationWidget({
   raised,
   spent,
   fundsNeededFor,
+  campaignId,
+  careProviderAddress,
+  goal = 0,
 }: DonationWidgetProps) {
   const router = useRouter();
+  const { address, openModalAndConnect } = useWalletsKit();
+  const {
+    initializeCampaignEscrow,
+    fundCampaignEscrow,
+    isLoading: escrowLoading,
+    error: escrowError,
+  } = useEscrow();
+  const { donate, isLoading: donationLoading, error: donationError } = useDonation();
   const [selectedAmount, setSelectedAmount] = useState<number | null>(50);
   const [customAmount, setCustomAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [donationType, setDonationType] = useState<"escrow" | "instant">("escrow");
+  const [error, setError] = useState<string | null>(null);
+  const [escrowContractId, setEscrowContractId] = useState<string | null>(null);
+
+  // Fetch escrow contract ID for campaign if it exists
+  useEffect(() => {
+    const fetchEscrowContractId = async () => {
+      if (!campaignId) return;
+
+      try {
+        const supabase = createBrowserClient();
+        const { data: campaign } = await supabase
+          .from("campaigns")
+          .select("escrow_contract_id")
+          .eq("id", campaignId)
+          .maybeSingle();
+
+        if (campaign?.escrow_contract_id) {
+          setEscrowContractId(campaign.escrow_contract_id);
+        }
+      } catch (err) {
+        console.error("Error fetching escrow contract ID:", err);
+      }
+    };
+
+    fetchEscrowContractId();
+  }, [campaignId]);
 
   const handleDonate = async () => {
     const amount = selectedAmount || Number.parseFloat(customAmount);
-    if (!amount || amount <= 0) return;
+    if (!amount || amount <= 0) {
+      setError("Please enter a valid donation amount");
+      return;
+    }
+
+    // Check wallet connection
+    if (!address) {
+      setError("Please connect your wallet to donate");
+      await openModalAndConnect();
+      return;
+    }
 
     setIsProcessing(true);
+    setError(null);
 
-    await new Promise((resolve) => setTimeout(resolve, 2500));
+    try {
+      if (donationType === "escrow") {
+        // Escrow donation flow
+        if (!campaignId) {
+          throw new Error("Campaign ID is required for escrow donations");
+        }
 
-    router.push(
-      `/donation-success?dog=${encodeURIComponent(dogName)}&amount=${amount}&type=${donationType}`
-    );
+        if (!careProviderAddress) {
+          throw new Error("Care provider address is required for escrow donations");
+        }
+
+        let contractId = escrowContractId;
+
+        // If no escrow exists, create one
+        if (!contractId) {
+          // Platform addresses - these should be configured in environment variables
+          // For now, using placeholder addresses - these should be replaced with actual platform addresses
+          const platformAddress = process.env.NEXT_PUBLIC_PLATFORM_ADDRESS || careProviderAddress;
+          const disputeResolverAddress =
+            process.env.NEXT_PUBLIC_DISPUTE_RESOLVER_ADDRESS || careProviderAddress;
+          const releaseSignerAddress =
+            process.env.NEXT_PUBLIC_RELEASE_SIGNER_ADDRESS || careProviderAddress;
+
+          const escrowResult = await initializeCampaignEscrow(
+            campaignId,
+            dogName,
+            careProviderAddress,
+            platformAddress,
+            disputeResolverAddress,
+            releaseSignerAddress,
+            goal || amount * 10, // Use goal or estimate based on donation
+            0.05 // 5% platform fee
+          );
+
+          contractId = escrowResult.contractId;
+
+          // Store escrow contract ID in database
+          try {
+            const supabase = createBrowserClient();
+            await supabase
+              .from("campaigns")
+              .update({ escrow_contract_id: contractId })
+              .eq("id", campaignId);
+          } catch (dbError) {
+            console.error("Error storing escrow contract ID:", dbError);
+            // Continue even if DB update fails
+          }
+
+          setEscrowContractId(contractId);
+        }
+
+        // Fund the escrow
+        const fundResult = await fundCampaignEscrow(contractId, amount);
+
+        if (!fundResult.successful) {
+          throw new Error("Failed to fund escrow");
+        }
+
+        router.push(
+          `/donation-success?dog=${encodeURIComponent(dogName)}&amount=${amount}&type=escrow&contractId=${contractId}&hash=${fundResult.hash || ""}`
+        );
+      } else {
+        // Instant donation flow
+        if (!careProviderAddress) {
+          throw new Error("Care provider address is required for instant donations");
+        }
+
+        const donationResult = await donate(
+          careProviderAddress,
+          amount.toString(),
+          `Donation for ${dogName}${campaignId ? ` (Campaign: ${campaignId})` : ""}`
+        );
+
+        if (!donationResult.successful) {
+          throw new Error("Donation failed");
+        }
+
+        router.push(
+          `/donation-success?dog=${encodeURIComponent(dogName)}&amount=${amount}&type=instant&hash=${donationResult.hash || ""}`
+        );
+      }
+    } catch (err: unknown) {
+      console.error("Donation error:", err);
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to process donation. Please try again.";
+      setError(errorMessage);
+      setIsProcessing(false);
+    }
   };
+
+  const isLoading = isProcessing || escrowLoading || donationLoading;
+  const displayError = error || escrowError?.message || donationError?.message;
 
   const donationAmounts = [25, 50, 100];
 
@@ -88,6 +229,7 @@ export function StickyDonationWidget({
           </h3>
           <div className="grid grid-cols-2 gap-2">
             <button
+              type="button"
               onClick={() => setDonationType("escrow")}
               className={`rounded-lg border-2 p-2.5 transition-all ${
                 donationType === "escrow"
@@ -104,6 +246,7 @@ export function StickyDonationWidget({
               </p>
             </button>
             <button
+              type="button"
               onClick={() => setDonationType("instant")}
               className={`rounded-lg border-2 p-2.5 transition-all ${
                 donationType === "instant"
@@ -128,12 +271,12 @@ export function StickyDonationWidget({
               How Your Donation Helps {dogName}
             </h3>
             <div className="space-y-1.5">
-              {normalizedFunds.map((item, index) => (
+              {normalizedFunds.map((item) => (
                 <div
-                  key={index}
+                  key={`${item.icon}-${item.label}`}
                   className="flex items-center gap-2 rounded-lg bg-purple-50 px-2 py-1.5"
                 >
-                  <div className="flex h-5 w-5 md:h-6 md:w-6 items-center justify-center rounded-full bg-purple-600 flex-shrink-0">
+                  <div className="flex h-5 w-5 md:h-6 md:w-6 items-center justify-center rounded-full bg-purple-600 shrink-0">
                     <span className="text-xs md:text-sm">{getIconEmoji(item.icon)}</span>
                   </div>
                   <span className="font-sans text-[10px] md:text-xs font-medium text-gray-800 leading-tight">
@@ -154,6 +297,7 @@ export function StickyDonationWidget({
             {donationAmounts.map((amount) => (
               <button
                 key={amount}
+                type="button"
                 onClick={() => {
                   setSelectedAmount(amount);
                   setCustomAmount("");
@@ -170,7 +314,10 @@ export function StickyDonationWidget({
           </div>
 
           <div>
-            <label className="mb-1 block font-sans text-[10px] md:text-xs font-medium text-gray-700">
+            <label
+              htmlFor="custom-amount-input"
+              className="mb-1 block font-sans text-[10px] md:text-xs font-medium text-gray-700"
+            >
               Or enter custom amount
             </label>
             <div className="relative">
@@ -178,6 +325,7 @@ export function StickyDonationWidget({
                 $
               </span>
               <input
+                id="custom-amount-input"
                 type="number"
                 value={customAmount}
                 onChange={(e) => {
@@ -191,15 +339,35 @@ export function StickyDonationWidget({
           </div>
         </div>
 
+        {/* Error Message */}
+        {displayError && (
+          <div className="mb-2 md:mb-3 rounded-lg bg-red-50 border border-red-200 p-2.5 md:p-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+              <p className="font-sans text-xs text-red-800 leading-tight">{displayError}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Wallet Connection Status */}
+        {!address && (
+          <div className="mb-2 md:mb-3 rounded-lg bg-yellow-50 border border-yellow-200 p-2.5 md:p-3">
+            <p className="font-sans text-xs text-yellow-800 leading-tight">
+              Please connect your wallet to make a donation
+            </p>
+          </div>
+        )}
+
         {/* Donate Button */}
         <Button
           onClick={handleDonate}
-          disabled={isProcessing || (!selectedAmount && !customAmount)}
+          disabled={isLoading || (!selectedAmount && !customAmount) || !address}
           className="mb-2 md:mb-3 w-full rounded-lg bg-purple-600 py-3 md:py-4 font-sans text-sm md:text-base font-bold text-white shadow-lg transition-all hover:bg-purple-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isProcessing ? (
+          {isLoading ? (
             <span className="flex items-center justify-center gap-2">
-              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24">
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" aria-label="Loading">
+                <title>Loading spinner</title>
                 <circle
                   className="opacity-25"
                   cx="12"
@@ -233,11 +401,13 @@ export function StickyDonationWidget({
         {/* Transparency Footer */}
         <div className="flex items-center justify-center gap-1.5 rounded-lg bg-white/20 px-2 py-1.5">
           <svg
-            className="h-3 w-3 md:h-3.5 md:w-3.5 text-white flex-shrink-0"
+            className="h-3 w-3 md:h-3.5 md:w-3.5 text-white shrink-0"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
+            aria-label="Security shield icon"
           >
+            <title>Security shield</title>
             <path
               strokeLinecap="round"
               strokeLinejoin="round"

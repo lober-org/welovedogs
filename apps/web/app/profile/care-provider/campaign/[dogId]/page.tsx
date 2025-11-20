@@ -65,6 +65,10 @@ export default async function CampaignManagementPage({
         id,
         name,
         images
+      ),
+      care_providers (
+        id,
+        stellar_address
       )
     `
     )
@@ -98,6 +102,7 @@ export default async function CampaignManagementPage({
     .order("created_at", { ascending: false });
 
   const campaignData = {
+    id: campaign.id,
     dogId: campaign.dog_id,
     dogName: campaign.dog_name || campaign.dogs?.name || "Unknown",
     dogImage: campaign.dog_image || campaign.dogs?.images?.[0] || "/placeholder.svg",
@@ -106,6 +111,9 @@ export default async function CampaignManagementPage({
     goal: Number(campaign.goal || 0),
     status: campaign.status || "Active",
     headline: campaign.headline || `${campaign.dog_name} needs your help`,
+    escrowContractId: campaign.escrow_contract_id || null,
+    stellarAddress: campaign.stellar_address || null, // Campaign's stellar_address field
+    careProviderStellarAddress: campaign.care_providers?.stellar_address || null, // Care provider's address
   };
 
   const updatesData =

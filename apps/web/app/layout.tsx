@@ -2,6 +2,7 @@ import type React from "react";
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { Header } from "@/components/header";
+import { Providers } from "@/components/Providers";
 import "./globals.css";
 
 import {
@@ -30,9 +31,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="font-sans antialiased overflow-x-hidden">
-        <Header />
-        {children}
-        <Analytics />
+        <Providers>
+          <Header />
+          {children}
+          <Analytics />
+        </Providers>
       </body>
     </html>
   );

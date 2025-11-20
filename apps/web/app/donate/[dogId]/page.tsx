@@ -23,7 +23,8 @@ export default async function DonatePage({ params }: { params: Promise<{ dogId: 
         spent,
         status,
         headline,
-        created_at
+        created_at,
+        escrow_contract_id
       ),
       campaign_updates(*),
       transactions(*),
@@ -132,6 +133,9 @@ export default async function DonatePage({ params }: { params: Promise<{ dogId: 
               raised={transformedDog.raised}
               spent={transformedDog.spent}
               fundsNeededFor={transformedDog.fundsNeededFor}
+              campaignId={activeCampaign?.id}
+              careProviderAddress={dog.care_provider?.stellar_address || undefined}
+              goal={activeCampaign ? Number(activeCampaign.goal) || 0 : 0}
             />
           </div>
         </div>
@@ -142,6 +146,9 @@ export default async function DonatePage({ params }: { params: Promise<{ dogId: 
             raised={transformedDog.raised}
             spent={transformedDog.spent}
             fundsNeededFor={transformedDog.fundsNeededFor}
+            campaignId={activeCampaign?.id}
+            careProviderAddress={dog.care_provider?.stellar_address || undefined}
+            goal={activeCampaign ? Number(activeCampaign.goal) || 0 : 0}
           />
         </div>
       </div>
