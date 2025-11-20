@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import DonorNFTGallery from "./DonorNFTGallery";
 
 interface DonorData {
   id: string;
@@ -73,6 +74,20 @@ interface DonorLevel {
   benefits: { perks: string[] };
 }
 
+interface NFTAchievement {
+  id: string;
+  nft_token_id: string;
+  blockchain_tx_hash?: string;
+  metadata?: {
+    metadataIpfsUrl?: string;
+    imageIpfsUrl?: string;
+    dogName?: string;
+    donationAmount?: number;
+    transactionId?: string;
+  };
+  earned_at: string;
+}
+
 export default function DonorProfileClient({
   donorData: initialDonorData,
   donations,
@@ -80,6 +95,8 @@ export default function DonorProfileClient({
   questProgress,
   donorLevels,
   currentLevel,
+  nftAchievements = [],
+  contractId,
 }: {
   donorData: DonorData;
   donations: Donation[];
@@ -87,6 +104,8 @@ export default function DonorProfileClient({
   questProgress: any[];
   donorLevels: DonorLevel[];
   currentLevel: DonorLevel;
+  nftAchievements?: NFTAchievement[];
+  contractId?: string;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [donorData, setDonorData] = useState({
@@ -432,9 +451,10 @@ export default function DonorProfileClient({
           </Card>
 
           <Tabs defaultValue="quests" className="space-y-4 md:space-y-6">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="quests">Quests</TabsTrigger>
               <TabsTrigger value="badges">POD Badges</TabsTrigger>
+              <TabsTrigger value="nfts">My NFTs</TabsTrigger>
               <TabsTrigger value="donations">Donations</TabsTrigger>
             </TabsList>
 
@@ -583,8 +603,8 @@ export default function DonorProfileClient({
                       POD Badge Collection
                     </h2>
                     <p className="text-sm md:text-base text-gray-600">
-                      Your earned Proof of Donation NFT badges. Each badge is minted on the
-                      blockchain as a permanent record of your generosity.
+                      Your earned Proof of Donation badges. Complete quests to unlock badges and
+                      mint them as NFTs!
                     </p>
                   </div>
 
@@ -615,13 +635,6 @@ export default function DonorProfileClient({
                               <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
                               <span className="font-bold text-gray-700">{quest.points} points</span>
                             </div>
-                            <Button
-                              size="sm"
-                              className="mt-4 bg-purple-600 hover:bg-purple-700 text-xs"
-                              disabled
-                            >
-                              Mint NFT (Coming Soon)
-                            </Button>
                           </div>
                         </div>
                       ))}
@@ -642,6 +655,24 @@ export default function DonorProfileClient({
                       </Link>
                     </div>
                   )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="nfts">
+              <Card className="shadow-xl">
+                <CardContent className="p-4 md:p-6">
+                  <div className="mb-6 md:mb-8">
+                    <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-2 flex items-center gap-2">
+                      <Award className="h-6 w-6 text-purple-600" />
+                      My Proof of Donation NFTs
+                    </h2>
+                    <p className="text-sm md:text-base text-gray-600">
+                      Your minted Proof of Donation NFTs. Each NFT is a permanent, verifiable record
+                      of your generosity on the blockchain.
+                    </p>
+                  </div>
+                  <DonorNFTGallery nftAchievements={nftAchievements} contractId={contractId} />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -685,7 +716,11 @@ export default function DonorProfileClient({
                             </span>
                             {donation.transactionHash && (
                               <a
-                                href={`https://etherscan.io/tx/${donation.transactionHash}`}
+                                href={
+                                  donation.transactionHash
+                                    ? `https://stellar.expert/explorer/${process.env.NEXT_PUBLIC_STELLAR_NETWORK === "public" ? "public" : "testnet"}/tx/${donation.transactionHash}`
+                                    : "#"
+                                }
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="flex items-center gap-1 text-purple-600 hover:text-purple-700 hover:underline"

@@ -21,6 +21,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { CreateEscrowModal } from "@/components/CreateEscrowModal";
+import { Label } from "@/components/ui/label";
 
 interface Campaign {
   id: string;
@@ -189,12 +190,14 @@ export default function CampaignManagementClient({
                 <Shield className="h-5 w-5" />
                 Escrow Account
               </CardTitle>
-              {!escrowContractId && (
-                <Button onClick={() => setIsEscrowModalOpen(true)} variant="default" size="sm">
-                  <Shield className="mr-2 h-4 w-4" />
-                  Create Escrow
-                </Button>
-              )}
+              <Button
+                onClick={() => setIsEscrowModalOpen(true)}
+                variant={escrowContractId ? "outline" : "default"}
+                size="sm"
+              >
+                <Shield className="mr-2 h-4 w-4" />
+                {escrowContractId ? "Edit Escrow" : "Create Escrow"}
+              </Button>
             </CardHeader>
             <CardContent>
               {escrowContractId ? (
@@ -303,6 +306,7 @@ export default function CampaignManagementClient({
                   <div className="space-y-4">
                     {sortedDonations.map((donation, index) => (
                       <div
+                        // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
                         key={index}
                         className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
                       >
@@ -440,6 +444,7 @@ export default function CampaignManagementClient({
             careProviderAddress={campaign.careProviderStellarAddress || campaign.stellarAddress}
             campaignStellarAddress={campaign.stellarAddress}
             goal={campaign.goal}
+            existingEscrowId={escrowContractId}
             onSuccess={(contractId) => {
               setEscrowContractId(contractId);
               setIsEscrowModalOpen(false);

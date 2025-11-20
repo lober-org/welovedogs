@@ -60,6 +60,124 @@ export default async function DonorProfilePage() {
     ? await supabase.from("donor_quest_progress").select("*").eq("donor_id", donor.id)
     : { data: [] };
 
+  // Fetch NFT achievements (minted NFTs)
+  // Query all achievements for this donor, then filter for those with NFTs
+  const { data: allAchievements } = donor
+    ? await supabase
+        .from("donor_achievements")
+        .select("*")
+        .eq("donor_id", donor.id)
+        .order("earned_at", { ascending: false })
+    : { data: [] };
+
+  // Filter for achievements that have been minted as NFTs
+  // Handle both boolean true and string "true" cases
+  let nftAchievements =
+    allAchievements?.filter((achievement) => {
+      const isMinted =
+        achievement.nft_minted === true ||
+        achievement.nft_minted === "true" ||
+        String(achievement.nft_minted).toLowerCase() === "true";
+      const hasTokenId =
+        achievement.nft_token_id !== null &&
+        achievement.nft_token_id !== undefined &&
+        String(achievement.nft_token_id).trim() !== "";
+      return isMinted && hasTokenId;
+    }) || [];
+
+  // Debug logging
+  if (donor && allAchievements) {
+    console.log("[donor-profile] Donor ID:", donor.id);
+    console.log("[donor-profile] Stellar Address:", donor.stellar_address);
+    console.log("[donor-profile] All achievements:", allAchievements.length);
+    console.log("[donor-profile] NFT achievements (from DB):", nftAchievements.length);
+    if (allAchievements.length > 0) {
+      console.log(
+        "[donor-profile] First achievement:",
+        JSON.stringify(
+          {
+            id: allAchievements[0].id,
+            nft_minted: allAchievements[0].nft_minted,
+            nft_token_id: allAchievements[0].nft_token_id,
+            nft_minted_type: typeof allAchievements[0].nft_minted,
+            nft_token_id_type: typeof allAchievements[0].nft_token_id,
+          },
+          null,
+          2
+        )
+      );
+    }
+  }
+
+  // Fallback: If no NFTs found in DB but donor has stellar address, try querying blockchain
+  // This handles cases where the NFT was minted but DB wasn't updated
+  if (nftAchievements.length === 0 && donor?.stellar_address) {
+    try {
+      const { createPodPoapClient } = await import("@/lib/contracts/podPoap");
+      const client = await createPodPoapClient();
+      const balanceTx = await client.balance({ account: donor.stellar_address });
+      const balance = Number(balanceTx.result ?? 0);
+
+      if (balance > 0) {
+        console.log(
+          `[donor-profile] Found ${balance} NFT(s) on blockchain for ${donor.stellar_address}, syncing...`
+        );
+
+        // Fetch all token IDs from blockchain
+        const blockchainTokens = [];
+        for (let index = 0; index < balance; index += 1) {
+          try {
+            const tokenTx = await client.get_owner_token_id({
+              owner: donor.stellar_address,
+              index,
+            });
+            const tokenId = Number(tokenTx.result ?? 0);
+
+            let tokenUri: string | null = null;
+            try {
+              const uriTx = await client.token_uri({ token_id: tokenId });
+              tokenUri = (uriTx.result as string) ?? null;
+            } catch {
+              // Token URI might not be set yet
+            }
+
+            blockchainTokens.push({
+              nft_token_id: tokenId.toString(),
+              tokenUri,
+            });
+          } catch (error) {
+            console.error(`[donor-profile] Error fetching token ${index}:`, error);
+          }
+        }
+
+        // Create synthetic achievement records from blockchain data
+        // Match them with existing achievements by quest if possible
+        if (blockchainTokens.length > 0 && allAchievements && allAchievements.length > 0) {
+          nftAchievements = blockchainTokens.map((token, index) => {
+            // Try to match with an existing achievement
+            const matchingAchievement = allAchievements[index] || allAchievements[0];
+            return {
+              id: matchingAchievement?.id || `blockchain-${token.nft_token_id}`,
+              nft_token_id: token.nft_token_id,
+              blockchain_tx_hash: matchingAchievement?.blockchain_tx_hash,
+              metadata: {
+                ...matchingAchievement?.metadata,
+                metadataIpfsUrl: token.tokenUri || matchingAchievement?.metadata?.metadataIpfsUrl,
+              },
+              earned_at: matchingAchievement?.earned_at || new Date().toISOString(),
+            };
+          });
+          console.log(
+            `[donor-profile] Created ${nftAchievements.length} synthetic NFT achievements from blockchain`
+          );
+        }
+      }
+    } catch (blockchainError) {
+      console.error("[donor-profile] Error querying blockchain for NFTs:", blockchainError);
+      // Continue with empty array if blockchain query fails
+    }
+  }
+
   const { data: donorLevels } = await supabase
     .from("donor_levels")
     .select("*")
@@ -120,6 +238,12 @@ export default async function DonorProfilePage() {
       transactionHash: tx.tx_hash || "",
     })) || [];
 
+  // Get contract ID from environment or bindings
+  const contractId =
+    process.env.POD_POAP_CONTRACT_ID ||
+    process.env.NEXT_PUBLIC_POD_POAP_CONTRACT_ID ||
+    "CB6L7W2OTD5LPTC5TOLFPLHTQXAYSHIB4DWA5UNI6PYJ53PW6LYDK3AE"; // Fallback to deployed contract
+
   return (
     <DonorProfileClient
       donorData={donorData}
@@ -128,6 +252,8 @@ export default async function DonorProfilePage() {
       questProgress={questProgress || []}
       donorLevels={donorLevels || []}
       currentLevel={currentLevel}
+      nftAchievements={nftAchievements || []}
+      contractId={contractId}
     />
   );
 }

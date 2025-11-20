@@ -4,6 +4,8 @@ import { useState, useMemo, useEffect } from "react";
 import { DogCard } from "@/components/dog-card";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { normalizeRescuedBy, filterAndSortDogs, type SortOption } from "@/lib/utils/dog-cards";
+import { useCampaignBalances } from "@/hooks/useCampaignBalances";
 
 interface Dog {
   id: string;
@@ -26,7 +28,7 @@ interface Dog {
   care_provider?: {
     id: string;
     name: string;
-    image: string;
+    profile_photo: string;
   };
   campaigns?: {
     id: string;
@@ -41,24 +43,20 @@ export function DogCards() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [requesterFilter, setRequesterFilter] = useState<string>("all");
-  const [sortBy, setSortBy] = useState("urgency");
+  const [sortBy, setSortBy] = useState<SortOption>("urgency");
   const [isMatching, setIsMatching] = useState(false);
   const router = useRouter();
 
-  const normalizeRescuedBy = (type: string): "Shelter" | "Veterinary" | "Rescuer" => {
-    const normalized = type.toLowerCase();
-    if (normalized === "veterinarian" || normalized === "veterinary") {
-      return "Veterinary";
-    }
-    if (normalized === "shelter") {
-      return "Shelter";
-    }
-    if (normalized === "rescuer") {
-      return "Rescuer";
-    }
-    // Default fallback
-    return "Rescuer";
-  };
+  // Get campaign IDs for fetching balances
+  const campaignIds = useMemo(() => {
+    return dogs.map((dog) => dog.campaigns?.[0]?.id).filter((id): id is string => !!id);
+  }, [dogs]);
+
+  // Fetch escrow balances for all campaigns
+  const { getBalance, isLoading: isLoadingBalances } = useCampaignBalances({
+    campaignIds,
+    enabled: campaignIds.length > 0,
+  });
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -74,7 +72,7 @@ export function DogCards() {
           .select(
             `
             *,
-            care_provider:care_providers(id, name, image),
+            care_provider:care_providers(id, name, profile_photo),
             campaigns(id, raised, goal, status)
           `
           )
@@ -125,25 +123,10 @@ export function DogCards() {
   }, []);
 
   const filteredAndSortedDogs = useMemo(() => {
-    const filtered = dogs.filter((dog) => {
-      if (requesterFilter === "all") return true;
-      return dog.requester_type === requesterFilter;
+    return filterAndSortDogs(dogs, {
+      requesterType: requesterFilter,
+      sortBy,
     });
-
-    const sorted = [...filtered].sort((a, b) => {
-      switch (sortBy) {
-        case "urgency":
-          return (a.campaigns?.[0]?.raised || 0) - (b.campaigns?.[0]?.raised || 0);
-        case "lessFunded":
-          return (a.campaigns?.[0]?.raised || 0) - (b.campaigns?.[0]?.raised || 0);
-        case "recent":
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        default:
-          return 0;
-      }
-    });
-
-    return sorted;
   }, [dogs, requesterFilter, sortBy]);
 
   const handleMatchMe = () => {
@@ -174,6 +157,7 @@ export function DogCards() {
           <div className="text-center">
             <p className="text-lg text-white mb-4">{error}</p>
             <button
+              type="button"
               onClick={() => window.location.reload()}
               className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
             >
@@ -208,6 +192,7 @@ export function DogCards() {
 
         <div id="match-me-section" className="mb-8 text-center">
           <button
+            type="button"
             onClick={handleMatchMe}
             disabled={isMatching}
             className="group relative mb-2 inline-flex items-center gap-3 rounded-full bg-gradient-to-r from-yellow-400 via-yellow-300 to-yellow-400 px-8 py-4 text-lg font-bold text-purple-900 shadow-lg transition-all hover:scale-105 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-70"
@@ -223,8 +208,11 @@ export function DogCards() {
 
         <div className="mb-8 flex flex-wrap items-center justify-center gap-4">
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-white">Care Provider Type:</label>
+            <label htmlFor="requester-filter" className="text-sm font-medium text-white">
+              Care Provider Type:
+            </label>
             <select
+              id="requester-filter"
               value={requesterFilter}
               onChange={(e) => setRequesterFilter(e.target.value)}
               className="rounded-md border border-white/20 bg-white/10 px-4 py-2 text-white backdrop-blur-md transition-all hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-purple-500"
@@ -245,10 +233,13 @@ export function DogCards() {
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-white">Sort By:</label>
+            <label htmlFor="sort-filter" className="text-sm font-medium text-white">
+              Sort By:
+            </label>
             <select
+              id="sort-filter"
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
+              onChange={(e) => setSortBy(e.target.value as SortOption)}
               className="rounded-md border border-white/20 bg-white/10 px-4 py-2 text-white backdrop-blur-md transition-all hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-purple-500"
             >
               <option value="urgency" className="bg-purple-700">
@@ -265,36 +256,45 @@ export function DogCards() {
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {filteredAndSortedDogs.map((dog) => (
-            <DogCard
-              key={dog.id}
-              id={dog.id}
-              name={dog.name}
-              location={dog.location}
-              image={
-                Array.isArray(dog.images) && dog.images.length > 0
-                  ? dog.images[0]
-                  : "/placeholder.svg"
-              }
-              headline={dog.headline}
-              raised={dog.campaigns?.[0]?.raised || 0}
-              goal={dog.campaigns?.[0]?.goal || 0}
-              needsSurgery={dog.needs_surgery}
-              medicalTreatment={dog.medical_treatment}
-              medicalRecovery={dog.medical_recovery}
-              readyForAdoption={dog.ready_for_adoption}
-              requesterType={dog.requester_type}
-              categoryTags={dog.category_tags}
-              createdAt={new Date(dog.created_at)}
-              rescuedBy={normalizeRescuedBy(dog.requester_type)}
-              rescuerName={dog.rescuer_name}
-              rescuerId={dog.care_provider_id}
-              rescuerImage={dog.care_provider?.image || "/placeholder.svg"}
-              country={dog.country}
-              state={dog.state}
-              city={dog.city}
-            />
-          ))}
+          {filteredAndSortedDogs.map((dog) => {
+            const campaignId = dog.campaigns?.[0]?.id;
+            const balance = campaignId ? getBalance(campaignId) : null;
+            const escrowBalance = balance?.escrowBalance || 0;
+            const isLoadingEscrow = balance?.isLoading ?? isLoadingBalances;
+
+            return (
+              <DogCard
+                key={dog.id}
+                id={dog.id}
+                name={dog.name}
+                location={dog.location}
+                image={
+                  Array.isArray(dog.images) && dog.images.length > 0
+                    ? dog.images[0]
+                    : "/placeholder.svg"
+                }
+                headline={dog.headline}
+                raised={dog.campaigns?.[0]?.raised || 0}
+                goal={dog.campaigns?.[0]?.goal || 0}
+                needsSurgery={dog.needs_surgery}
+                medicalTreatment={dog.medical_treatment}
+                medicalRecovery={dog.medical_recovery}
+                readyForAdoption={dog.ready_for_adoption}
+                requesterType={dog.requester_type}
+                categoryTags={dog.category_tags}
+                createdAt={new Date(dog.created_at)}
+                rescuedBy={normalizeRescuedBy(dog.requester_type)}
+                rescuerName={dog.rescuer_name}
+                rescuerId={dog.care_provider_id}
+                rescuerImage={dog.care_provider?.profile_photo || "/placeholder.svg"}
+                country={dog.country}
+                state={dog.state}
+                city={dog.city}
+                escrowBalance={balance?.escrowContractId ? escrowBalance : undefined}
+                isLoadingEscrow={isLoadingEscrow}
+              />
+            );
+          })}
         </div>
 
         <div className="mt-6">
@@ -332,7 +332,9 @@ export function DogCards() {
                     viewBox="0 0 512 512"
                     className="h-full w-full fill-white opacity-75"
                     xmlns="http://www.w3.org/2000/svg"
+                    aria-label="Paw print animation"
                   >
+                    <title>Paw print</title>
                     <path d="M256 224c-79.37 0-191.1 122.7-191.1 200.2C64.02 459.1 90.76 480 135.8 480C184.6 480 216.9 454.9 256 454.9C295.5 454.9 327.9 480 376.2 480c44.1 0 71.74-20.88 71.74-55.75C447.1 346.8 335.4 224 256 224zM108.8 211.4c-10.37-34.62-42.5-57.12-71.62-50.12S-7.104 202 3.27 236.6C13.64 271.3 45.77 293.8 74.89 286.8S119.1 246 108.8 211.4zM193.5 190.6c30.87-8.125 46.37-49.1 34.5-93.37s-46.5-71.1-77.49-63.87c-30.87 8.125-46.37 49.1-34.5 93.37C127.9 270.1 162.5 298.8 193.5 190.6zM474.9 161.3c-29.12-6.1-61.25 15.5-71.62 50.12c-10.37 34.63 4.75 68.37 33.87 75.37c29.12 6.1 61.12-15.5 71.62-50.12C519.1 202 503.1 168.3 474.9 161.3zM318.5 190.6c30.1 8.125 65.62-20.5 77.49-63.87c11.87-43.37-3.625-85.25-34.5-93.37c-30.1-8.125-65.62 20.5-77.49 63.87C272.1 140.6 287.6 182.5 318.5 190.6z" />
                   </svg>
                 </div>

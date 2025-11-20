@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Menu, X, User, Heart, ChevronDown, LogOut, Wallet } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { createBrowserClient } from "@/lib/supabase/client";
 import { useWalletsKit } from "@/hooks/useWalletsKit";
 import { CopyButton } from "@/components/ui/copy-button";
@@ -22,7 +22,8 @@ export function Header() {
   const [userType, setUserType] = useState<"donor" | "care-provider" | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const supabase = createBrowserClient();
+  const pathname = usePathname();
+  const supabase = useMemo(() => createBrowserClient(), []);
   const { address, openModalAndConnect, disconnect, isConnected } = useWalletsKit();
 
   useEffect(() => {
@@ -52,8 +53,13 @@ export function Header() {
 
             if (providerData) {
               setUserType("care-provider");
+            } else {
+              setUserType(null);
             }
           }
+        } else {
+          setUser(null);
+          setUserType(null);
         }
       } catch (error) {
         console.error("Error checking auth:", error);
@@ -71,7 +77,48 @@ export function Header() {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [supabase]);
+
+  // Re-check auth when pathname changes (e.g., after registration redirect)
+  useEffect(() => {
+    if (pathname && !loading) {
+      const checkAuth = async () => {
+        try {
+          const {
+            data: { user: authUser },
+          } = await supabase.auth.getUser();
+
+          if (authUser) {
+            const { data: donorData } = await supabase
+              .from("donors")
+              .select("id")
+              .eq("auth_user_id", authUser.id)
+              .maybeSingle();
+
+            if (donorData) {
+              setUserType("donor");
+            } else {
+              const { data: providerData } = await supabase
+                .from("care_providers")
+                .select("id")
+                .eq("auth_user_id", authUser.id)
+                .maybeSingle();
+
+              if (providerData) {
+                setUserType("care-provider");
+              } else {
+                setUserType(null);
+              }
+            }
+          }
+        } catch (error) {
+          console.error("Error checking auth on route change:", error);
+        }
+      };
+
+      checkAuth();
+    }
+  }, [pathname, supabase, loading]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -121,7 +168,7 @@ export function Header() {
 
         {/* Desktop Actions */}
         <div className="hidden lg:flex items-center gap-2 shrink-0">
-          {!loading && user && userType ? (
+          {!loading && user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -180,17 +227,31 @@ export function Header() {
                 </div>
 
                 <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href={`/profile/${userType}`} className="cursor-pointer">
-                    <User className="h-4 w-4 mr-2" />
-                    My Profile
-                  </Link>
-                </DropdownMenuItem>
-                {userType === "care-provider" && (
+                {userType ? (
+                  <>
+                    <DropdownMenuItem asChild>
+                      <Link href={`/profile/${userType}`} className="cursor-pointer">
+                        <User className="h-4 w-4 mr-2" />
+                        My Profile
+                      </Link>
+                    </DropdownMenuItem>
+                    {userType === "care-provider" && (
+                      <DropdownMenuItem asChild>
+                        <Link
+                          href="/profile/care-provider/create-campaign"
+                          className="cursor-pointer"
+                        >
+                          <Heart className="h-4 w-4 mr-2" />
+                          Create Campaign
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                  </>
+                ) : (
                   <DropdownMenuItem asChild>
-                    <Link href="/profile/care-provider/create-campaign" className="cursor-pointer">
-                      <Heart className="h-4 w-4 mr-2" />
-                      Create Campaign
+                    <Link href="/select-user-type" className="cursor-pointer">
+                      <User className="h-4 w-4 mr-2" />
+                      Complete Registration
                     </Link>
                   </DropdownMenuItem>
                 )}
@@ -218,12 +279,12 @@ export function Header() {
 
         {/* Mobile Actions */}
         <div className="flex items-center gap-1.5 lg:hidden">
-          {!loading && user && userType ? (
+          {!loading && user ? (
             <button
               type="button"
-              onClick={() => router.push(`/profile/${userType}`)}
+              onClick={() => router.push(userType ? `/profile/${userType}` : "/select-user-type")}
               className="flex items-center justify-center h-8 w-8 text-white hover:bg-green-700 rounded-md transition-colors"
-              aria-label="My profile"
+              aria-label={userType ? "My profile" : "Complete registration"}
             >
               <User className="h-4 w-4" />
             </button>
@@ -281,32 +342,51 @@ export function Header() {
               About Us
             </Link>
             <div className="border-t border-green-700 pt-2 space-y-2">
-              {!loading && user && userType ? (
+              {!loading && user ? (
                 <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full border border-white/30 bg-white/10 text-white backdrop-blur-sm hover:bg-white hover:text-green-600"
-                    asChild
-                  >
-                    <Link href={`/profile/${userType}`} onClick={() => setMobileMenuOpen(false)}>
-                      <User className="h-4 w-4 mr-2" />
-                      My Profile
-                    </Link>
-                  </Button>
-                  {userType === "care-provider" && (
+                  {userType ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full border border-white/30 bg-white/10 text-white backdrop-blur-sm hover:bg-white hover:text-green-600"
+                        asChild
+                      >
+                        <Link
+                          href={`/profile/${userType}`}
+                          onClick={() => setMobileMenuOpen(false)}
+                        >
+                          <User className="h-4 w-4 mr-2" />
+                          My Profile
+                        </Link>
+                      </Button>
+                      {userType === "care-provider" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full border border-white/30 bg-white/10 text-white backdrop-blur-sm hover:bg-white hover:text-green-600"
+                          asChild
+                        >
+                          <Link
+                            href="/profile/care-provider/create-campaign"
+                            onClick={() => setMobileMenuOpen(false)}
+                          >
+                            <Heart className="h-4 w-4 mr-2" />
+                            Create Campaign
+                          </Link>
+                        </Button>
+                      )}
+                    </>
+                  ) : (
                     <Button
                       variant="outline"
                       size="sm"
                       className="w-full border border-white/30 bg-white/10 text-white backdrop-blur-sm hover:bg-white hover:text-green-600"
                       asChild
                     >
-                      <Link
-                        href="/profile/care-provider/create-campaign"
-                        onClick={() => setMobileMenuOpen(false)}
-                      >
-                        <Heart className="h-4 w-4 mr-2" />
-                        Create Campaign
+                      <Link href="/select-user-type" onClick={() => setMobileMenuOpen(false)}>
+                        <User className="h-4 w-4 mr-2" />
+                        Complete Registration
                       </Link>
                     </Button>
                   )}

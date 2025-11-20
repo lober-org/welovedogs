@@ -178,9 +178,12 @@ export async function GET(req: NextRequest) {
       })
     );
 
-    // Add memo if provided
+    // Add memo if provided (max 28 bytes for Stellar)
     if (memo) {
-      transaction.addMemo(Memo.text(memo));
+      // Truncate memo to 28 bytes max
+      const maxMemoLength = 28;
+      const truncatedMemo = memo.length > maxMemoLength ? memo.substring(0, maxMemoLength) : memo;
+      transaction.addMemo(Memo.text(truncatedMemo));
     }
 
     const tx = transaction.setTimeout(30).build();

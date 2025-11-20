@@ -111,7 +111,7 @@ export default async function CampaignManagementPage({
     goal: Number(campaign.goal || 0),
     status: campaign.status || "Active",
     headline: campaign.headline || `${campaign.dog_name} needs your help`,
-    escrowContractId: campaign.escrow_contract_id || null,
+    escrowContractId: campaign.escrow_id || null,
     stellarAddress: campaign.stellar_address || null, // Campaign's stellar_address field
     careProviderStellarAddress: campaign.care_providers?.stellar_address || null, // Care provider's address
   };
@@ -147,7 +147,11 @@ export default async function CampaignManagementPage({
       usdValue: Number(donation.usd_value),
       donor: donation.donor_address,
       txHash: donation.tx_hash,
-      explorerUrl: donation.explorer_url || `https://etherscan.io/tx/${donation.tx_hash}`,
+      explorerUrl:
+        donation.explorer_url ||
+        (donation.tx_hash
+          ? `https://stellar.expert/explorer/${process.env.NEXT_PUBLIC_STELLAR_NETWORK === "public" ? "public" : "testnet"}/tx/${donation.tx_hash}`
+          : ""), // Note: Using env var directly here since this is server-side
     })) || [];
 
   return (

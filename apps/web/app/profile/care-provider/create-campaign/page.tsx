@@ -152,7 +152,7 @@ export default function CreateCampaignPage() {
           spent: 0,
           status: "Active",
           stellar_address: formData.stellarAddress || null,
-          escrow_contract_id: formData.escrowContractId || null,
+          escrow_id: formData.escrowContractId || null,
         })
         .select()
         .single();
@@ -249,7 +249,7 @@ export default function CreateCampaignPage() {
                       onClick={() => setSelectedDog(dog)}
                     >
                       <CardContent className="p-4">
-                        <div className="flex gap-3">
+                        <div className="flex gap-1">
                           {image && (
                             <Image
                               src={image || "/placeholder.svg"}

@@ -1,20 +1,45 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Share2, Lock, Sparkles, Heart } from "lucide-react";
+import { Share2, Lock, Sparkles, Heart, Trophy, CheckCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import Image from "next/image";
 import Link from "next/link";
+import { createBrowserClient } from "@/lib/supabase/client";
+import { updateQuestProgress } from "@/app/actions/update-quest-progress";
+import { toast } from "sonner";
+import { useDonationNFT } from "@/hooks/useDonationNFT";
 
 function DonationSuccessContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const dogName = searchParams.get("dogName") || "this dog";
+  const dogName = searchParams.get("dog") || searchParams.get("dogName") || "this dog";
   const amount = searchParams.get("amount") || "0";
+  const donationType = searchParams.get("type") || "instant";
+  const txHash = searchParams.get("hash") || "";
+  const contractId = searchParams.get("contractId") || "";
+  const dogId = searchParams.get("dogId") || "";
+  const donorAddress = searchParams.get("donorAddress") || "";
+  const campaignId = searchParams.get("campaignId") || "";
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [donorId, setDonorId] = useState<string | null>(null);
   const [collectibleClaimed, setCollectibleClaimed] = useState(false);
+  const [donationRecorded, setDonationRecorded] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [questProgress, setQuestProgress] = useState<any[]>([]);
+  const [achievements, setAchievements] = useState<any[]>([]);
+  const [isLoadingQuests, setIsLoadingQuests] = useState(false);
+  const [totalDonated, setTotalDonated] = useState(0);
+  const [dogsSupported, setDogsSupported] = useState(0);
+  const [transactionId, setTransactionId] = useState<string | null>(null);
+  const [nftMinted, setNftMinted] = useState(false);
+  const [nftTokenId, setNftTokenId] = useState<number | null>(null);
+
+  const { mintNFTForDonation, isLoading: isMintingNFT } = useDonationNFT();
 
   const [email, setEmail] = useState("");
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -44,6 +69,218 @@ function DonationSuccessContent() {
   const handleSignUpToClaim = () => {
     router.push(`/register/donor?from=donation-success&dogName=${dogName}&amount=${amount}`);
   };
+
+  // Check authentication and get donor ID
+  useEffect(() => {
+    const checkAuth = async () => {
+      const supabase = createBrowserClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        setIsAuthenticated(true);
+        setEmail(user.email || "");
+
+        // Get donor ID
+        const { data: donor } = await supabase
+          .from("donors")
+          .select("id")
+          .eq("auth_user_id", user.id)
+          .maybeSingle();
+
+        if (donor) {
+          setDonorId(donor.id);
+        }
+      }
+    };
+
+    checkAuth();
+  }, []);
+
+  // Fetch dogId from campaignId if not provided
+  const [finalDogId, setFinalDogId] = useState(dogId);
+  const [isFetchingDogId, setIsFetchingDogId] = useState(false);
+
+  useEffect(() => {
+    const fetchDogId = async () => {
+      // If we already have dogId, don't fetch
+      if (finalDogId) {
+        return;
+      }
+
+      // Try to get dogId from campaignId if available
+      if (campaignId && !isFetchingDogId) {
+        setIsFetchingDogId(true);
+        try {
+          const supabase = createBrowserClient();
+          const { data: campaign, error } = await supabase
+            .from("campaigns")
+            .select("dog_id")
+            .eq("id", campaignId)
+            .maybeSingle();
+
+          if (error) {
+            console.error("Error fetching campaign dog_id:", error);
+          } else if (campaign?.dog_id) {
+            setFinalDogId(campaign.dog_id);
+          }
+        } catch (err) {
+          console.error("Error in fetchDogId:", err);
+        } finally {
+          setIsFetchingDogId(false);
+        }
+      }
+    };
+
+    fetchDogId();
+  }, [campaignId, finalDogId, isFetchingDogId]);
+
+  // Record donation and update quest progress
+  useEffect(() => {
+    const recordDonation = async () => {
+      // We can record donations even without donorId (for guest donations)
+      // But we need at least dogId and txHash
+      if (!finalDogId || !txHash || donationRecorded || isRecording || isFetchingDogId) {
+        // Log why we're not recording
+        if (!finalDogId) {
+          console.log("Waiting for dogId...", { dogId, campaignId, finalDogId, isFetchingDogId });
+        }
+        return;
+      }
+
+      setIsRecording(true);
+      const toastId = toast.loading("Recording your donation...");
+
+      try {
+        console.log("Recording donation:", {
+          donorId,
+          dogId: finalDogId,
+          campaignId,
+          txHash,
+          amount,
+          donationType,
+          contractId,
+          donorAddress,
+        });
+
+        // Record the donation
+        const recordResponse = await fetch("/api/donation/record", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            donorId: donorId || undefined, // Optional - API will fetch from auth if not provided
+            dogId: finalDogId,
+            campaignId: campaignId || undefined,
+            txHash,
+            amount: parseFloat(amount),
+            donationType: donationType as "escrow" | "instant",
+            contractId: contractId || undefined,
+            donorAddress: donorAddress || undefined, // Pass the donor's wallet address
+          }),
+        });
+
+        const recordResult = await recordResponse.json();
+
+        console.log("Donation record result:", recordResult);
+
+        if (!recordResult.ok) {
+          throw new Error(recordResult.error || "Failed to record donation");
+        }
+
+        setDonationRecorded(true);
+        setTransactionId(recordResult.transactionId);
+
+        // The API route already updates quest progress, so we just fetch the updated data
+        // Only fetch if we have a donorId (from the response or state)
+        const updatedDonorId = recordResult.donorId || donorId;
+
+        if (updatedDonorId) {
+          // Fetch updated quest progress and achievements
+          const supabase = createBrowserClient();
+          const { data: progress } = await supabase
+            .from("donor_quest_progress")
+            .select(
+              `
+            *,
+            quests (
+              id,
+              name,
+              description,
+              icon,
+              requirement_type,
+              requirement_value,
+              points
+            )
+          `
+            )
+            .eq("donor_id", updatedDonorId);
+
+          const { data: achievementsData } = await supabase
+            .from("donor_achievements")
+            .select(
+              `
+            *,
+            quests (
+              id,
+              name,
+              description,
+              icon,
+              points
+            )
+          `
+            )
+            .eq("donor_id", updatedDonorId)
+            .order("earned_at", { ascending: false });
+
+          // Get donor stats
+          const { data: donor } = await supabase
+            .from("donors")
+            .select("total_donations, dogs_supported")
+            .eq("id", updatedDonorId)
+            .single();
+
+          if (donor) {
+            setTotalDonated(donor.total_donations || 0);
+            setDogsSupported(donor.dogs_supported || 0);
+          }
+
+          setQuestProgress(progress || []);
+          setAchievements(achievementsData || []);
+        }
+
+        toast.success("Donation recorded!", {
+          id: toastId,
+          description: "Your donation has been tracked and quest progress updated",
+        });
+      } catch (error: any) {
+        console.error("Error recording donation:", error);
+        toast.error("Failed to record donation", {
+          id: toastId,
+          description: error.message || "Please contact support if this persists",
+        });
+      } finally {
+        setIsRecording(false);
+      }
+    };
+
+    recordDonation();
+  }, [
+    donorId,
+    finalDogId,
+    txHash,
+    amount,
+    donationType,
+    contractId,
+    donorAddress,
+    campaignId,
+    donationRecorded,
+    isRecording,
+    isFetchingDogId,
+    dogId,
+  ]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-yellow-50">
@@ -125,39 +362,229 @@ function DonationSuccessContent() {
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-2xl border-2 border-purple-300 bg-gradient-to-br from-purple-50 to-pink-50 p-4 text-center">
-                    <div className="mb-3 flex justify-center">
-                      {!collectibleClaimed ? (
-                        <Image
-                          src="/golden-dog-paw-badge-collectible.jpg"
-                          alt="Collectible badge"
-                          width={80}
-                          height={80}
-                          className="rounded-2xl"
-                        />
-                      ) : (
-                        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-pink-500">
-                          <Sparkles className="h-10 w-10 text-white" />
-                        </div>
-                      )}
-                    </div>
-                    <h2 className="mb-2 font-sans text-lg font-bold text-foreground">
-                      {!collectibleClaimed ? "Your Collectible Awaits!" : "Collectible Claimed!"}
-                    </h2>
-                    <p className="mb-3 text-xs text-muted-foreground">
-                      {!collectibleClaimed
-                        ? `This exclusive badge represents your donation to ${dogName}.`
-                        : "Thank you for being a hero!"}
-                    </p>
-                    {!collectibleClaimed && (
-                      <Button
-                        size="sm"
-                        onClick={handleClaimCollectible}
-                        className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-sm font-semibold text-white hover:from-purple-700 hover:to-pink-700"
-                      >
-                        <Sparkles className="mr-2 h-4 w-4" />
-                        Claim Collectible
-                      </Button>
+                  <div className="space-y-4">
+                    {/* Donation Stats */}
+                    {donationRecorded && (
+                      <Card className="border-2 border-green-200 bg-gradient-to-br from-green-50 to-emerald-50">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <CheckCircle className="h-5 w-5 text-green-600" />
+                            Donation Recorded!
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="text-center p-2 bg-white rounded-lg">
+                              <p className="text-xs text-gray-600">Total Donated</p>
+                              <p className="text-lg font-bold text-gray-800">
+                                ${totalDonated.toLocaleString()}
+                              </p>
+                            </div>
+                            <div className="text-center p-2 bg-white rounded-lg">
+                              <p className="text-xs text-gray-600">Dogs Supported</p>
+                              <p className="text-lg font-bold text-gray-800">{dogsSupported}</p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Quest Progress */}
+                    {questProgress.length > 0 && (
+                      <Card className="border-2 border-purple-300 bg-white">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <Trophy className="h-5 w-5 text-purple-600" />
+                            Quest Progress
+                          </CardTitle>
+                          <CardDescription className="text-xs">
+                            Track your achievements and unlock badges
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-2 max-h-48 overflow-y-auto">
+                          {questProgress.slice(0, 3).map((progress: any) => {
+                            const quest = progress.quests;
+                            if (!quest) return null;
+                            const percentage = Math.min(
+                              (progress.current_progress / quest.requirement_value) * 100,
+                              100
+                            );
+                            return (
+                              <div
+                                key={progress.id}
+                                className="p-2 bg-purple-50 rounded-lg border border-purple-200"
+                              >
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs font-semibold text-gray-800">
+                                    {quest.icon} {quest.name}
+                                  </span>
+                                  {progress.is_completed && (
+                                    <Badge className="bg-green-500 text-white text-xs">
+                                      Completed
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="w-full bg-gray-200 rounded-full h-1.5 mb-1">
+                                  <div
+                                    className={`h-1.5 rounded-full ${
+                                      progress.is_completed ? "bg-green-500" : "bg-purple-500"
+                                    }`}
+                                    style={{ width: `${percentage}%` }}
+                                  />
+                                </div>
+                                <p className="text-xs text-gray-600">
+                                  {progress.current_progress} / {quest.requirement_value}
+                                </p>
+                              </div>
+                            );
+                          })}
+                          {questProgress.length > 3 && (
+                            <Link href="/profile/donor">
+                              <Button variant="ghost" size="sm" className="w-full text-xs">
+                                View All Quests ({questProgress.length})
+                              </Button>
+                            </Link>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Achievements/Badges */}
+                    {achievements.length > 0 && (
+                      <Card className="border-2 border-yellow-300 bg-gradient-to-br from-yellow-50 to-amber-50">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <Sparkles className="h-5 w-5 text-yellow-600" />
+                            Your Badges
+                          </CardTitle>
+                          <CardDescription className="text-xs">
+                            Achievements you've unlocked
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="flex flex-wrap gap-2">
+                            {achievements.slice(0, 4).map((achievement: any) => {
+                              const quest = achievement.quests;
+                              if (!quest) return null;
+                              return (
+                                <div
+                                  key={achievement.id}
+                                  className="flex flex-col items-center p-2 bg-white rounded-lg border border-yellow-200"
+                                >
+                                  <div className="text-2xl mb-1">{quest.icon}</div>
+                                  <p className="text-xs font-semibold text-center text-gray-800">
+                                    {quest.name}
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {achievements.length > 4 && (
+                            <Link href="/profile/donor">
+                              <Button variant="ghost" size="sm" className="w-full mt-2 text-xs">
+                                View All Badges ({achievements.length})
+                              </Button>
+                            </Link>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Loading State */}
+                    {isRecording && (
+                      <Card className="border-2 border-blue-300 bg-blue-50">
+                        <CardContent className="p-4 text-center">
+                          <Loader2 className="h-6 w-6 animate-spin text-blue-600 mx-auto mb-2" />
+                          <p className="text-sm text-blue-800">Recording your donation...</p>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Mint NFT Section */}
+                    {donationRecorded && donorId && transactionId && !nftMinted && (
+                      <Card className="border-2 border-purple-300 bg-gradient-to-br from-purple-50 to-pink-50">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <Sparkles className="h-5 w-5 text-purple-600" />
+                            Claim Your NFT Badge
+                          </CardTitle>
+                          <CardDescription className="text-xs">
+                            Mint a commemorative Proof of Donation NFT for your contribution
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <Button
+                            size="sm"
+                            onClick={async () => {
+                              if (!donorId || !transactionId) return;
+                              try {
+                                const result = await mintNFTForDonation(donorId, transactionId);
+                                setNftMinted(true);
+                                setNftTokenId(result.tokenId);
+                                toast.success("NFT minted!", {
+                                  description: "Your Proof of Donation NFT is ready",
+                                });
+                              } catch (error) {
+                                console.error("Failed to mint NFT:", error);
+                              }
+                            }}
+                            disabled={isMintingNFT}
+                            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-sm font-semibold text-white hover:from-purple-700 hover:to-pink-700"
+                          >
+                            {isMintingNFT ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Minting NFT...
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="mr-2 h-4 w-4" />
+                                Mint Proof of Donation NFT
+                              </>
+                            )}
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* NFT Minted Success */}
+                    {nftMinted && nftTokenId !== null && (
+                      <Card className="border-2 border-green-300 bg-gradient-to-br from-green-50 to-emerald-50">
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-base flex items-center gap-2">
+                            <CheckCircle className="h-5 w-5 text-green-600" />
+                            NFT Minted Successfully!
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-sm text-gray-700 mb-2">
+                            Your Proof of Donation NFT #{nftTokenId} has been minted and added to
+                            your wallet.
+                          </p>
+                          <Link href="/profile/donor">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full border-green-300 text-green-700 hover:bg-green-100"
+                            >
+                              View My NFTs
+                            </Button>
+                          </Link>
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* View Profile CTA */}
+                    {donationRecorded && (
+                      <Link href="/profile/donor">
+                        <Button
+                          size="sm"
+                          className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-sm font-semibold text-white hover:from-purple-700 hover:to-pink-700"
+                        >
+                          <Trophy className="mr-2 h-4 w-4" />
+                          View My Profile & Quests
+                        </Button>
+                      </Link>
                     )}
                   </div>
                 )}

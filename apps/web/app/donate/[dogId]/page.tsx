@@ -24,7 +24,8 @@ export default async function DonatePage({ params }: { params: Promise<{ dogId: 
         status,
         headline,
         created_at,
-        escrow_contract_id
+        escrow_id,
+        stellar_address
       ),
       campaign_updates(*),
       transactions(*),
@@ -35,7 +36,12 @@ export default async function DonatePage({ params }: { params: Promise<{ dogId: 
     .maybeSingle();
 
   if (error) {
-    console.error("Error fetching dog:", error.message, error.details, error.hint);
+    console.error("Error fetching dog:", {
+      message: error?.message || "Unknown error",
+      details: error?.details || null,
+      hint: error?.hint || null,
+      error: error,
+    });
     notFound();
   }
 
@@ -68,6 +74,8 @@ export default async function DonatePage({ params }: { params: Promise<{ dogId: 
     goal: activeCampaign ? Number(activeCampaign.goal) || 0 : 0,
     spent: activeCampaign ? Number(activeCampaign.spent) || 0 : 0,
     confirmation: dog.confirmation,
+    campaignId: activeCampaign?.id,
+    campaignStellarAddress: activeCampaign?.stellar_address || undefined,
     careProvider: dog.care_provider
       ? {
           id: dog.care_provider.id,
@@ -135,6 +143,7 @@ export default async function DonatePage({ params }: { params: Promise<{ dogId: 
               fundsNeededFor={transformedDog.fundsNeededFor}
               campaignId={activeCampaign?.id}
               careProviderAddress={dog.care_provider?.stellar_address || undefined}
+              campaignStellarAddress={activeCampaign?.stellar_address || undefined}
               goal={activeCampaign ? Number(activeCampaign.goal) || 0 : 0}
             />
           </div>
@@ -148,6 +157,7 @@ export default async function DonatePage({ params }: { params: Promise<{ dogId: 
             fundsNeededFor={transformedDog.fundsNeededFor}
             campaignId={activeCampaign?.id}
             careProviderAddress={dog.care_provider?.stellar_address || undefined}
+            campaignStellarAddress={activeCampaign?.stellar_address || undefined}
             goal={activeCampaign ? Number(activeCampaign.goal) || 0 : 0}
           />
         </div>

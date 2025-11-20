@@ -157,14 +157,19 @@ export async function createPodPoapClient(overrides: ClientOptions = {}) {
     const signer = Keypair.fromSecret(overrides.secretKey);
     clientOptions.publicKey = overrides.publicKey ?? signer.publicKey();
     clientOptions.signTransaction = async (
-      xdr: string | xdr.TransactionEnvelope,
-      opts: { networkPassphrase: any }
+      xdrInput: string | xdr.TransactionEnvelope,
+      opts?: { networkPassphrase?: string }
     ) => {
+      // Convert to string if it's an envelope, otherwise use as-is
+      const xdrString = typeof xdrInput === "string" ? xdrInput : xdrInput.toXDR("base64");
+
+      // Use TransactionBuilder.fromXDR which handles both classic and Soroban transactions
       const tx = TransactionBuilder.fromXDR(
-        xdr,
-        opts?.networkPassphrase ?? (networkPassphrase as string)
+        xdrString,
+        opts?.networkPassphrase ?? networkPassphrase
       );
       tx.sign(signer);
+
       return {
         signedTxXdr: tx.toXDR(),
         signerAddress: signer.publicKey(),

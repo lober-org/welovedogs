@@ -90,9 +90,9 @@ export function AboutTechnology() {
             {/* Left: Stellar Logo */}
             <div className="flex-shrink-0">
               <img
-                src="/placeholder.svg"
+                src="/images/design-mode/stellar-xlm-logo.png"
                 alt="Stellar logo"
-                className="h-32 w-32 md:h-40 md:w-40 lg:h-48 lg:w-48"
+                className="h-32 w-32 md:h-40 md:w-40 lg:h-48 lg:w-48 brightness-0 invert"
               />
             </div>
 
