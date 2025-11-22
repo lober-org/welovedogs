@@ -1,7 +1,6 @@
 import { Keypair, TransactionBuilder, xdr } from "@stellar/stellar-sdk";
 import fs from "fs";
 import path from "path";
-import { createRequire } from "module";
 import { pathToFileURL } from "url";
 import { getConfig } from "@/lib/config";
 
@@ -9,16 +8,21 @@ type PodPoapModule = typeof import("@stellar/stellar-sdk/contract");
 
 let modulePromise: Promise<PodPoapModule & { Client: any; networks?: Record<string, any> }> | null =
   null;
-const nodeRequire = createRequire(import.meta.url);
 
 function getBindingModuleId(): string {
-  const moduleId = process.env.POD_POAP_BINDING || process.env.NEXT_PUBLIC_POD_POAP_BINDING;
+  const moduleId =
+    process.env.POD_POAP_BINDING || process.env.NEXT_PUBLIC_POD_POAP_BINDING || "pod_poap";
 
-  if (!moduleId) {
-    throw new Error(
-      "POD_POAP_BINDING is not set. Generate bindings and set POD_POAP_BINDING or NEXT_PUBLIC_POD_POAP_BINDING. See apps/web/CONTRACTS_GUIDE.md."
-    );
+  // For bare module specifiers (like "pod_poap"), return as-is
+  // Next.js will resolve it via the package.json dependency
+  if (!moduleId.startsWith(".") && !moduleId.startsWith("/") && !moduleId.startsWith("file://")) {
+    const isWindowsPath = /^[a-zA-Z]:\\/.test(moduleId);
+    if (!isWindowsPath) {
+      return moduleId;
+    }
   }
+
+  // For path-like specifiers, resolve them
   return resolveModuleSpecifier(moduleId);
 }
 
@@ -83,17 +87,32 @@ async function loadModule() {
   if (!modulePromise) {
     modulePromise = (async () => {
       const moduleId = getBindingModuleId();
-      if (isBareModuleSpecifier(moduleId)) {
-        return nodeRequire(moduleId) as PodPoapModule & {
-          Client: any;
-          networks?: Record<string, any>;
-        };
+      try {
+        // Use dynamic import for both server and client
+        // This works better with Next.js bundling than nodeRequire
+        if (typeof window === "undefined") {
+          // Server-side: use regular dynamic import
+          return (await import(moduleId)) as PodPoapModule & {
+            Client: any;
+            networks?: Record<string, any>;
+          };
+        } else {
+          // Client-side: use eval-based dynamic import
+          // biome-ignore lint/security/noGlobalEval: Required for dynamic import in browser
+          const dynamicImport: (s: string) => Promise<any> = (0, eval)("import");
+          return (await dynamicImport(moduleId)) as Promise<
+            PodPoapModule & { Client: any; networks?: Record<string, any> }
+          >;
+        }
+      } catch (error) {
+        // If module not found, provide a helpful error message
+        console.error("Failed to load POD POAP module:", error);
+        throw new Error(
+          `Failed to load POD POAP binding module "${moduleId}". ` +
+            `Make sure POD_POAP_BINDING is set correctly and the package is installed. ` +
+            `Error: ${error instanceof Error ? error.message : String(error)}`
+        );
       }
-      // biome-ignore lint/security/noGlobalEval: <explanation>
-      const dynamicImport: (s: string) => Promise<any> = (0, eval)("import");
-      return dynamicImport(moduleId) as Promise<
-        PodPoapModule & { Client: any; networks?: Record<string, any> }
-      >;
     })();
   }
   return modulePromise;
