@@ -28,12 +28,19 @@ export default async function DonatePage({ params }: { params: Promise<{ dogId: 
         stellar_address
       ),
       campaign_updates(*),
-      transactions(*),
       campaign_expenses(*)
     `
     )
     .eq("id", dogId)
     .maybeSingle();
+
+  // Fetch only donation transactions separately
+  const { data: donationTransactions } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("dog_id", dogId)
+    .eq("type", "donation")
+    .order("created_at", { ascending: false });
 
   if (error) {
     console.error("Error fetching dog:", {
@@ -100,7 +107,7 @@ export default async function DonatePage({ params }: { params: Promise<{ dogId: 
         image: update.image,
       })) || [],
     transactions:
-      dog.transactions?.map((tx: any) => ({
+      donationTransactions?.map((tx: any) => ({
         date: new Date(tx.created_at).toLocaleDateString(),
         cryptoAmount: tx.crypto_amount,
         tokenSymbol: tx.token_symbol,

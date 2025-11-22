@@ -99,6 +99,7 @@ export default async function CampaignManagementPage({
     .from("transactions")
     .select("*")
     .eq("campaign_id", campaign.id)
+    .eq("type", "donation")
     .order("created_at", { ascending: false });
 
   const campaignData = {

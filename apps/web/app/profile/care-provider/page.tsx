@@ -63,6 +63,29 @@ export default async function CareProviderProfilePage() {
     .eq("care_provider_id", careProvider.id)
     .order("created_at", { ascending: false });
 
+  // Fetch donation totals for all campaigns
+  const campaignIds = campaigns?.map((c) => c.id) || [];
+  let donationTotals: Record<string, number> = {};
+
+  if (campaignIds.length > 0) {
+    const { data: donations } = await supabase
+      .from("transactions")
+      .select("campaign_id, usd_value")
+      .in("campaign_id", campaignIds)
+      .eq("type", "donation");
+
+    // Calculate totals per campaign
+    donations?.forEach((donation) => {
+      const campaignId = donation.campaign_id;
+      if (campaignId) {
+        if (!donationTotals[campaignId]) {
+          donationTotals[campaignId] = 0;
+        }
+        donationTotals[campaignId] += Number(donation.usd_value || 0);
+      }
+    });
+  }
+
   const profileData = {
     name: careProvider.name || "Care Provider",
     clinicName: careProvider.clinic_name || careProvider.org_name || "",
@@ -85,7 +108,7 @@ export default async function CareProviderProfilePage() {
       dogId: campaign.dog_id,
       dogName: campaign.dog_name || campaign.dogs?.name || "Unknown",
       dogImage: campaign.dog_image || campaign.dogs?.images?.[0] || "/placeholder.svg",
-      raised: Number(campaign.raised || 0),
+      raised: donationTotals[campaign.id] || 0, // Use donation totals instead of campaign.raised
       goal: Number(campaign.goal || 0),
       spent: Number(campaign.spent || 0),
       status: campaign.status || "Active",

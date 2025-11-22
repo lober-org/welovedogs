@@ -5,7 +5,6 @@ import { DogCard } from "@/components/dog-card";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { normalizeRescuedBy, filterAndSortDogs, type SortOption } from "@/lib/utils/dog-cards";
-import { useCampaignBalances } from "@/hooks/useCampaignBalances";
 
 interface Dog {
   id: string;
@@ -47,16 +46,69 @@ export function DogCards() {
   const [isMatching, setIsMatching] = useState(false);
   const router = useRouter();
 
-  // Get campaign IDs for fetching balances
+  // Get campaign IDs for fetching donation totals
   const campaignIds = useMemo(() => {
     return dogs.map((dog) => dog.campaigns?.[0]?.id).filter((id): id is string => !!id);
   }, [dogs]);
 
-  // Fetch escrow balances for all campaigns
-  const { getBalance, isLoading: isLoadingBalances } = useCampaignBalances({
-    campaignIds,
-    enabled: campaignIds.length > 0,
-  });
+  // Fetch donation totals for all campaigns
+  const [donationTotals, setDonationTotals] = useState<
+    Record<string, { total: number; escrow: number; instant: number }>
+  >({});
+  const [isLoadingDonations, setIsLoadingDonations] = useState(false);
+
+  useEffect(() => {
+    const fetchDonationTotals = async () => {
+      if (campaignIds.length === 0) {
+        setDonationTotals({});
+        return;
+      }
+
+      setIsLoadingDonations(true);
+      try {
+        const supabase = createClient();
+        const { data: transactions, error } = await supabase
+          .from("transactions")
+          .select("campaign_id, usd_value, donation_type")
+          .in("campaign_id", campaignIds)
+          .eq("type", "donation");
+
+        if (error) {
+          console.error("Error fetching donation totals:", error);
+          setIsLoadingDonations(false);
+          return;
+        }
+
+        const totals: Record<string, { total: number; escrow: number; instant: number }> = {};
+
+        transactions?.forEach((tx) => {
+          const campaignId = tx.campaign_id;
+          if (!campaignId) return;
+
+          if (!totals[campaignId]) {
+            totals[campaignId] = { total: 0, escrow: 0, instant: 0 };
+          }
+
+          const amount = Number(tx.usd_value || 0);
+          totals[campaignId].total += amount;
+
+          if (tx.donation_type === "escrow") {
+            totals[campaignId].escrow += amount;
+          } else if (tx.donation_type === "instant") {
+            totals[campaignId].instant += amount;
+          }
+        });
+
+        setDonationTotals(totals);
+      } catch (err) {
+        console.error("Error fetching donation totals:", err);
+      } finally {
+        setIsLoadingDonations(false);
+      }
+    };
+
+    fetchDonationTotals();
+  }, [campaignIds]);
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -258,9 +310,10 @@ export function DogCards() {
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {filteredAndSortedDogs.map((dog) => {
             const campaignId = dog.campaigns?.[0]?.id;
-            const balance = campaignId ? getBalance(campaignId) : null;
-            const escrowBalance = balance?.escrowBalance || 0;
-            const isLoadingEscrow = balance?.isLoading ?? isLoadingBalances;
+            const donationTotalsForCampaign = campaignId ? donationTotals[campaignId] : null;
+            const totalRaised = donationTotalsForCampaign?.total || 0;
+            const escrowDonations = donationTotalsForCampaign?.escrow || 0;
+            const instantDonations = donationTotalsForCampaign?.instant || 0;
 
             return (
               <DogCard
@@ -274,7 +327,7 @@ export function DogCards() {
                     : "/placeholder.svg"
                 }
                 headline={dog.headline}
-                raised={dog.campaigns?.[0]?.raised || 0}
+                raised={instantDonations}
                 goal={dog.campaigns?.[0]?.goal || 0}
                 needsSurgery={dog.needs_surgery}
                 medicalTreatment={dog.medical_treatment}
@@ -290,8 +343,8 @@ export function DogCards() {
                 country={dog.country}
                 state={dog.state}
                 city={dog.city}
-                escrowBalance={balance?.escrowContractId ? escrowBalance : undefined}
-                isLoadingEscrow={isLoadingEscrow}
+                escrowBalance={escrowDonations > 0 ? escrowDonations : undefined}
+                isLoadingEscrow={isLoadingDonations}
               />
             );
           })}

@@ -45,6 +45,9 @@ export function StickyDonationWidget({
   const [isLoadingBalances, setIsLoadingBalances] = useState(false);
   const [campaignStellarAddr, setCampaignStellarAddr] = useState<string | null>(null);
   const [dogId, setDogId] = useState<string | null>(null);
+  const [totalEscrowDonations, setTotalEscrowDonations] = useState<number>(0);
+  const [totalInstantDonations, setTotalInstantDonations] = useState<number>(0);
+  const [isLoadingDonations, setIsLoadingDonations] = useState(false);
 
   // Store functions in refs to prevent re-renders while keeping them up-to-date
   const getMultipleBalancesRef = useRef(getMultipleBalances);
@@ -93,6 +96,57 @@ export function StickyDonationWidget({
 
     fetchCampaignData();
   }, [campaignId]);
+
+  // Refresh donation totals from database
+  const refreshDonations = useCallback(async () => {
+    if (!campaignId) {
+      setTotalEscrowDonations(0);
+      setTotalInstantDonations(0);
+      return;
+    }
+
+    try {
+      const supabase = createBrowserClient();
+      const { data: transactions, error } = await supabase
+        .from("transactions")
+        .select("usd_value, donation_type")
+        .eq("campaign_id", campaignId)
+        .eq("type", "donation");
+
+      if (error) {
+        console.error("Error fetching donations:", error);
+        return;
+      }
+
+      let escrowTotal = 0;
+      let instantTotal = 0;
+
+      transactions?.forEach((tx: { usd_value: number | null; donation_type: string | null }) => {
+        const amount = Number(tx.usd_value || 0);
+        if (tx.donation_type === "escrow") {
+          escrowTotal += amount;
+        } else if (tx.donation_type === "instant") {
+          instantTotal += amount;
+        }
+      });
+
+      setTotalEscrowDonations(escrowTotal);
+      setTotalInstantDonations(instantTotal);
+    } catch (err) {
+      console.error("Error refreshing donations:", err);
+    }
+  }, [campaignId]);
+
+  // Fetch total donations from database - only when campaignId changes
+  useEffect(() => {
+    const fetchDonations = async () => {
+      setIsLoadingDonations(true);
+      await refreshDonations();
+      setIsLoadingDonations(false);
+    };
+
+    fetchDonations();
+  }, [refreshDonations]);
 
   // Fetch escrow balance separately - only when escrowContractId changes
   useEffect(() => {
@@ -248,8 +302,9 @@ export function StickyDonationWidget({
           duration: 5000,
         });
 
-        // Refresh balances before navigating
+        // Refresh balances and donations before navigating
         await refreshBalances();
+        await refreshDonations();
 
         // Pass both dogId (if available) and campaignId (as fallback for fetching dogId)
         const dogIdParam = dogId ? `&dogId=${encodeURIComponent(dogId)}` : "";
@@ -305,6 +360,9 @@ export function StickyDonationWidget({
           }
         }
 
+        // Refresh donation totals
+        await refreshDonations();
+
         // Pass both dogId (if available) and campaignId (as fallback for fetching dogId)
         const dogIdParam = dogId ? `&dogId=${encodeURIComponent(dogId)}` : "";
         const campaignIdParam = campaignId ? `&campaignId=${encodeURIComponent(campaignId)}` : "";
@@ -331,9 +389,8 @@ export function StickyDonationWidget({
   const isLoading = isProcessing || escrowLoading || donationLoading;
   const displayError = error || escrowError?.message || donationError?.message;
 
-  // Calculate total raised (escrow balance + campaign wallet balance)
-  const totalRaised = escrowBalance + (Number.parseFloat(campaignWalletBalance) || 0);
-  const instantRaised = Number.parseFloat(campaignWalletBalance) || 0;
+  // Calculate total raised from donations (not balances)
+  const totalRaised = totalEscrowDonations + totalInstantDonations;
 
   const donationAmounts = [25, 50, 100];
 
@@ -364,7 +421,7 @@ export function StickyDonationWidget({
             </span>
             <span className="font-sans text-xl md:text-2xl font-bold text-white">
               $
-              {isLoadingBalances || campaignBalanceLoading
+              {isLoadingDonations
                 ? "..."
                 : totalRaised.toLocaleString(undefined, {
                     minimumFractionDigits: 2,
@@ -381,9 +438,9 @@ export function StickyDonationWidget({
                 </span>
                 <span className="font-medium">
                   $
-                  {isLoadingBalances
+                  {isLoadingDonations
                     ? "..."
-                    : escrowBalance.toLocaleString(undefined, {
+                    : totalEscrowDonations.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })}
@@ -396,9 +453,9 @@ export function StickyDonationWidget({
                 </span>
                 <span className="font-medium">
                   $
-                  {campaignBalanceLoading
+                  {isLoadingDonations
                     ? "..."
-                    : instantRaised.toLocaleString(undefined, {
+                    : totalInstantDonations.toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })}
@@ -413,9 +470,9 @@ export function StickyDonationWidget({
               </span>
               <span className="font-medium">
                 $
-                {campaignBalanceLoading
+                {isLoadingDonations
                   ? "..."
-                  : instantRaised.toLocaleString(undefined, {
+                  : totalInstantDonations.toLocaleString(undefined, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}
@@ -453,7 +510,6 @@ export function StickyDonationWidget({
                 }`}
               >
                 <div className="flex items-center justify-center gap-1.5 mb-1">
-                  <Shield className="h-3.5 w-3.5 md:h-4 md:w-4" />
                   <span className="font-sans text-xs md:text-sm font-semibold">
                     Proof-Based Release
                   </span>

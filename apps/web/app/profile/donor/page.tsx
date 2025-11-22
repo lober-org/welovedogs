@@ -47,6 +47,7 @@ export default async function DonorProfilePage() {
     `
         )
         .eq("donor_id", donor.id)
+        .eq("type", "donation")
         .order("created_at", { ascending: false })
     : { data: [] };
 

@@ -5,10 +5,9 @@ import type { Dog } from "./types";
 interface CampaignStatusCardProps {
   dog: Dog;
   totalRaised: number;
-  escrowBalance: number;
-  instantRaised: number;
-  isLoadingBalances: boolean;
-  campaignBalanceLoading: boolean;
+  escrowDonations: number;
+  instantDonations: number;
+  isLoadingDonations: boolean;
   escrowContractId: string | null;
   stellarAddressToUse: string | null;
 }
@@ -16,10 +15,9 @@ interface CampaignStatusCardProps {
 export function CampaignStatusCard({
   dog,
   totalRaised,
-  escrowBalance,
-  instantRaised,
-  isLoadingBalances,
-  campaignBalanceLoading,
+  escrowDonations,
+  instantDonations,
+  isLoadingDonations,
   escrowContractId,
   stellarAddressToUse,
 }: CampaignStatusCardProps) {
@@ -72,7 +70,7 @@ export function CampaignStatusCard({
         <div className="grid grid-cols-3 gap-4 mt-6">
           <div className="text-center p-4 rounded-lg bg-background/60">
             <div className="text-2xl font-bold text-foreground">
-              ${formatCurrency(totalRaised, isLoadingBalances || campaignBalanceLoading)}
+              ${formatCurrency(totalRaised, isLoadingDonations)}
             </div>
             <div className="text-xs text-muted-foreground mt-1">Total Raised</div>
           </div>
@@ -99,7 +97,7 @@ export function CampaignStatusCard({
                   Escrow:
                 </span>
                 <span className="font-semibold text-foreground">
-                  ${formatCurrency(escrowBalance, isLoadingBalances)}
+                  ${formatCurrency(escrowDonations, isLoadingDonations)}
                 </span>
               </div>
             )}
@@ -110,7 +108,7 @@ export function CampaignStatusCard({
                   Instant:
                 </span>
                 <span className="font-semibold text-foreground">
-                  ${formatCurrency(instantRaised, campaignBalanceLoading)}
+                  ${formatCurrency(instantDonations, isLoadingDonations)}
                 </span>
               </div>
             )}
@@ -122,15 +120,18 @@ export function CampaignStatusCard({
         <div className="rounded-lg border bg-card p-6">
           <h3 className="font-semibold text-lg mb-4">Funds Needed For:</h3>
           <div className="flex flex-wrap gap-2">
-            {dog.fundsNeededFor.map((item: any, index: number) => (
-              <div
-                key={index}
-                className="flex items-center gap-2 px-4 py-2 rounded-full border bg-background"
-              >
-                <span className="text-lg">{iconMap[item.label] || iconMap[item] || "❤️"}</span>
-                <span className="text-sm font-medium">{item.label || item}</span>
-              </div>
-            ))}
+            {dog.fundsNeededFor.map((item: any, index: number) => {
+              const itemKey = typeof item === "string" ? item : item.label || `item-${index}`;
+              return (
+                <div
+                  key={itemKey}
+                  className="flex items-center gap-2 px-4 py-2 rounded-full border bg-background"
+                >
+                  <span className="text-lg">{iconMap[item.label] || iconMap[item] || "❤️"}</span>
+                  <span className="text-sm font-medium">{item.label || item}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

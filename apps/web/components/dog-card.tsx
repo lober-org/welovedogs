@@ -80,6 +80,8 @@ export function DogCard({
     }
   };
 
+  // totalRaised is now the sum of raised (instant) + escrowBalance (escrow donations)
+  // Both values come from donation totals, not balances
   const totalRaised = raised + (escrowBalance || 0);
   const hasEscrow = escrowBalance !== undefined && escrowBalance > 0;
 

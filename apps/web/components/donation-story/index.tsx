@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import type { Route } from "next";
@@ -14,11 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useStellarAccount } from "@/hooks/useStellarAccount";
-import { useEscrow } from "@/hooks/useEscrow";
-import { useGetMultipleEscrowBalances } from "@trustless-work/escrow/hooks";
 import { createBrowserClient } from "@/lib/supabase/client";
-import { getConfig } from "@/lib/config";
 import { getProfileRoute } from "./utils";
 import type { Dog, Comment, Update, Transaction } from "./types";
 import { ImageGallery } from "./ImageGallery";
@@ -31,7 +27,6 @@ import { ExpenseReport } from "./ExpenseReport";
 import { UpdateImageModal } from "./UpdateImageModal";
 import { UpdateDialog } from "./UpdateDialog";
 import { PaginationControls } from "./PaginationControls";
-import { StarRating } from "./StarRating";
 import { toast } from "sonner";
 
 export function DonationStory({ dog }: { dog: Dog }) {
@@ -49,23 +44,7 @@ export function DonationStory({ dog }: { dog: Dog }) {
 
   // Escrow and balance state
   const [escrowContractId, setEscrowContractId] = useState<string | null>(null);
-  const [escrowBalance, setEscrowBalance] = useState<number>(0);
-  const [isLoadingBalances, setIsLoadingBalances] = useState(false);
   const [campaignStellarAddr, setCampaignStellarAddr] = useState<string | null>(null);
-
-  // Hooks for fetching balances
-  const { getEscrowDetails } = useEscrow();
-  const { getMultipleBalances } = useGetMultipleEscrowBalances();
-
-  // Store functions in refs to prevent re-renders
-  const getMultipleBalancesRef = useRef(getMultipleBalances);
-  const getEscrowDetailsRef = useRef(getEscrowDetails);
-
-  // Update refs when functions change
-  useEffect(() => {
-    getMultipleBalancesRef.current = getMultipleBalances;
-    getEscrowDetailsRef.current = getEscrowDetails;
-  }, [getMultipleBalances, getEscrowDetails]);
 
   // Fetch campaign data (escrow_id and stellar_address) from Supabase
   useEffect(() => {
@@ -96,181 +75,54 @@ export function DonationStory({ dog }: { dog: Dog }) {
     fetchCampaignData();
   }, [dog.campaignId]);
 
-  // Fetch escrow balance separately - only when escrowContractId changes
-  useEffect(() => {
-    const fetchEscrowBalance = async () => {
-      if (!escrowContractId) {
-        setEscrowBalance(0);
-        return;
-      }
-
-      setIsLoadingBalances(true);
-      try {
-        const balances = await getMultipleBalancesRef.current({
-          addresses: [escrowContractId],
-        });
-
-        if (Array.isArray(balances) && balances.length > 0) {
-          const balanceData = balances[0];
-          if (balanceData && "balance" in balanceData && typeof balanceData.balance === "number") {
-            setEscrowBalance(balanceData.balance);
-          }
-        }
-      } catch (balanceError) {
-        console.error("Error fetching escrow balance:", balanceError);
-        try {
-          const escrowDetails = await getEscrowDetailsRef.current([escrowContractId]);
-          const escrow = Array.isArray(escrowDetails) ? escrowDetails[0] : escrowDetails;
-          if (escrow && "balance" in escrow && typeof escrow.balance === "number") {
-            setEscrowBalance(escrow.balance);
-          }
-        } catch (detailsError) {
-          console.error("Error fetching escrow details for balance:", detailsError);
-        }
-      } finally {
-        setIsLoadingBalances(false);
-      }
-    };
-
-    fetchEscrowBalance();
-  }, [escrowContractId]);
-
   // Memoize stellar address to prevent unnecessary re-renders
   const stellarAddressToUse = useMemo(() => {
     return campaignStellarAddr || dog.campaignStellarAddress || null;
   }, [campaignStellarAddr, dog.campaignStellarAddress]);
 
-  // Fetch campaign wallet balance
-  const { lumensBalance: campaignWalletBalance, isLoading: campaignBalanceLoading } =
-    useStellarAccount(stellarAddressToUse);
+  // Transaction state - only use database transactions which are already filtered to donations
+  const [isLoadingTransactions] = useState(false);
 
-  // Calculate total raised (escrow + instant)
-  const instantRaised = Number.parseFloat(campaignWalletBalance) || 0;
-  const totalRaised = escrowBalance + instantRaised;
-
-  // Transaction state
-  const [escrowTransactions, setEscrowTransactions] = useState<
-    Array<Transaction & { type: "escrow" }>
-  >([]);
-  const [instantTransactions, setInstantTransactions] = useState<
-    Array<Transaction & { type: "instant" }>
-  >([]);
-  const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
-
-  // Fetch transactions from Horizon API
-  useEffect(() => {
-    const fetchTransactions = async () => {
-      setIsLoadingTransactions(true);
-      try {
-        const cfg = getConfig();
-        const isMainnet = cfg.stellarNetwork === "public" || cfg.stellarNetwork === "mainnet";
-        const explorerNetwork = isMainnet ? "public" : "testnet";
-
-        // Fetch instant transactions from campaign wallet
-        if (stellarAddressToUse) {
-          try {
-            const instantUrl = `${cfg.horizonUrl}/accounts/${stellarAddressToUse}/payments?limit=200&order=desc`;
-            const instantRes = await fetch(instantUrl);
-            if (instantRes.ok) {
-              const instantData = await instantRes.json();
-              const instantRecords = instantData._embedded?.records || [];
-
-              const instantTxs = instantRecords
-                .filter((p: any) => {
-                  if (p.type !== "payment") return false;
-                  const assetCode = p.asset_code || p.asset?.code;
-                  return assetCode === "USDC" && p.to === stellarAddressToUse;
-                })
-                .map((p: any) => {
-                  const amount = parseFloat(p.amount) || 0;
-                  return {
-                    date: p.created_at ? new Date(p.created_at).toLocaleDateString() : "Unknown",
-                    cryptoAmount: amount.toFixed(2),
-                    tokenSymbol: "USDC",
-                    usdValue: amount,
-                    donor: p.from || "Unknown",
-                    txHash: p.transaction_hash || "",
-                    explorerUrl: `https://stellar.expert/explorer/${explorerNetwork}/tx/${p.transaction_hash || ""}`,
-                    type: "instant" as const,
-                  };
-                });
-
-              setInstantTransactions(instantTxs);
-            }
-          } catch (err) {
-            console.error("Error fetching instant transactions:", err);
-          }
-        }
-
-        // Fetch escrow transactions from escrow contract address
-        if (escrowContractId) {
-          try {
-            const escrowUrl = `${cfg.horizonUrl}/accounts/${escrowContractId}/payments?limit=200&order=desc`;
-            const escrowRes = await fetch(escrowUrl);
-            if (escrowRes.ok) {
-              const escrowData = await escrowRes.json();
-              const escrowRecords = escrowData._embedded?.records || [];
-
-              const escrowTxs = escrowRecords
-                .filter((p: any) => {
-                  if (p.type !== "payment") return false;
-                  const assetCode = p.asset_code || p.asset?.code;
-                  return assetCode === "USDC" && p.to === escrowContractId;
-                })
-                .map((p: any) => {
-                  const amount = parseFloat(p.amount) || 0;
-                  return {
-                    date: p.created_at ? new Date(p.created_at).toLocaleDateString() : "Unknown",
-                    cryptoAmount: amount.toFixed(2),
-                    tokenSymbol: "USDC",
-                    usdValue: amount,
-                    donor: p.from || "Unknown",
-                    txHash: p.transaction_hash || "",
-                    explorerUrl: `https://stellar.expert/explorer/${explorerNetwork}/tx/${p.transaction_hash || ""}`,
-                    type: "escrow" as const,
-                  };
-                });
-
-              setEscrowTransactions(escrowTxs);
-            }
-          } catch (err) {
-            console.error("Error fetching escrow transactions:", err);
-          }
-        }
-      } catch (err) {
-        console.error("Error fetching transactions:", err);
-      } finally {
-        setIsLoadingTransactions(false);
-      }
-    };
-
-    fetchTransactions();
-  }, [escrowContractId, stellarAddressToUse]);
-
-  // Combine all transactions with type indicators
+  // Use only database transactions (already filtered to donations from server query)
+  // dog.transactions is already populated with donations from the server-side query
   const allTransactions = useMemo(() => {
-    const combined = [
-      ...escrowTransactions,
-      ...instantTransactions,
-      ...(dog.transactions || []).map((tx) => ({
+    // dog.transactions is already filtered to donations from the server query
+    // Map transactions to include type information
+    return (dog.transactions || []).map((tx) => {
+      // Check if transaction has donation_type property to determine escrow vs instant
+      const txWithType = tx as Transaction & { donation_type?: string };
+      const isEscrow = tx.type === "escrow" || txWithType.donation_type === "escrow";
+
+      return {
         ...tx,
-        type: tx.type || ("instant" as const),
-      })),
-    ];
+        type: (isEscrow ? "escrow" : "instant") as "escrow" | "instant",
+      };
+    });
+  }, [dog.transactions]);
 
-    // Remove duplicates based on txHash
-    const unique = combined.reduce(
-      (acc, tx) => {
-        if (!acc.find((t) => t.txHash === tx.txHash)) {
-          acc.push(tx);
-        }
-        return acc;
-      },
-      [] as typeof combined
-    );
+  // Calculate total donations from database transactions (not balances)
+  const { totalRaised, totalEscrowDonations, totalInstantDonations } = useMemo(() => {
+    let escrowTotal = 0;
+    let instantTotal = 0;
 
-    return unique;
-  }, [escrowTransactions, instantTransactions, dog.transactions]);
+    (dog.transactions || []).forEach((tx) => {
+      const txWithType = tx as Transaction & { donation_type?: string };
+      const isEscrow = tx.type === "escrow" || txWithType.donation_type === "escrow";
+      const amount = tx.usdValue || 0;
+
+      if (isEscrow) {
+        escrowTotal += amount;
+      } else {
+        instantTotal += amount;
+      }
+    });
+
+    return {
+      totalRaised: escrowTotal + instantTotal,
+      totalEscrowDonations: escrowTotal,
+      totalInstantDonations: instantTotal,
+    };
+  }, [dog.transactions]);
 
   const sortedTransactions = useMemo(() => {
     return [...allTransactions].sort((a, b) => {
@@ -602,10 +454,9 @@ export function DonationStory({ dog }: { dog: Dog }) {
             <CampaignStatusCard
               dog={dog}
               totalRaised={totalRaised}
-              escrowBalance={escrowBalance}
-              instantRaised={instantRaised}
-              isLoadingBalances={isLoadingBalances}
-              campaignBalanceLoading={campaignBalanceLoading}
+              escrowDonations={totalEscrowDonations}
+              instantDonations={totalInstantDonations}
+              isLoadingDonations={false}
               escrowContractId={escrowContractId}
               stellarAddressToUse={stellarAddressToUse}
             />
@@ -736,12 +587,6 @@ export function DonationStory({ dog }: { dog: Dog }) {
       <Tabs defaultValue="campaign" className="w-full hidden md:block">
         <TabsList className="mb-4 w-full justify-start overflow-x-auto overflow-y-hidden bg-muted/50 p-1.5 md:mb-6 flex md:grid md:grid-cols-6 gap-2">
           <TabsTrigger
-            value="campaign"
-            className="whitespace-nowrap shrink-0 px-6 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-          >
-            Campaign
-          </TabsTrigger>
-          <TabsTrigger
             value="updates"
             className="whitespace-nowrap shrink-0 px-6 relative data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
           >
@@ -749,6 +594,12 @@ export function DonationStory({ dog }: { dog: Dog }) {
             <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
               {updates.length}
             </span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="campaign"
+            className="whitespace-nowrap shrink-0 px-6 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+          >
+            Campaign
           </TabsTrigger>
           <TabsTrigger
             value="journey"

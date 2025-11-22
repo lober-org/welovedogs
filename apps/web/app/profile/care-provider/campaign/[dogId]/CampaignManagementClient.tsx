@@ -121,7 +121,9 @@ export default function CampaignManagementClient({
     }
   };
 
-  const progressPercentage = campaign.goal > 0 ? (campaign.raised / campaign.goal) * 100 : 0;
+  // Calculate total raised from donations (not campaign.raised which might be outdated)
+  const totalRaised = donations.reduce((sum, donation) => sum + donation.usdValue, 0);
+  const progressPercentage = campaign.goal > 0 ? (totalRaised / campaign.goal) * 100 : 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-purple-50/50 to-white">
@@ -235,7 +237,7 @@ export default function CampaignManagementClient({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">${campaign.raised.toLocaleString()}</div>
+              <div className="text-3xl font-bold">${totalRaised.toLocaleString()}</div>
               <p className="text-sm text-muted-foreground mt-1">
                 of ${campaign.goal.toLocaleString()} goal
               </p>
@@ -268,7 +270,7 @@ export default function CampaignManagementClient({
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">
-                ${(campaign.raised - campaign.spent).toLocaleString()}
+                ${(totalRaised - campaign.spent).toLocaleString()}
               </div>
               <p className="text-sm text-muted-foreground mt-1">Available for treatment</p>
             </CardContent>
