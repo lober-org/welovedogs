@@ -88,14 +88,24 @@ async function loadModule() {
     modulePromise = (async () => {
       const moduleId = getBindingModuleId();
       try {
-        // Use dynamic import for both server and client
-        // This works better with Next.js bundling than nodeRequire
+        // Use dynamic import with webpack magic comment to help bundling
+        // The magic comment tells webpack to include this module in the bundle
         if (typeof window === "undefined") {
-          // Server-side: use regular dynamic import
-          return (await import(moduleId)) as PodPoapModule & {
-            Client: any;
-            networks?: Record<string, any>;
-          };
+          // Server-side: use dynamic import with explicit module name
+          // Try direct import first (webpack should resolve via alias)
+          try {
+            // @ts-expect-error - webpack will resolve this via alias
+            return (await import(/* webpackMode: "eager" */ "pod_poap")) as PodPoapModule & {
+              Client: any;
+              networks?: Record<string, any>;
+            };
+          } catch (directImportError) {
+            // Fallback to using moduleId (might be a path)
+            return (await import(moduleId)) as PodPoapModule & {
+              Client: any;
+              networks?: Record<string, any>;
+            };
+          }
         } else {
           // Client-side: use eval-based dynamic import
           // biome-ignore lint/security/noGlobalEval: Required for dynamic import in browser
