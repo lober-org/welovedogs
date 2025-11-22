@@ -8,7 +8,7 @@ import type { Update, Comment } from "./types";
 
 interface UpdateCardProps {
   update: Update;
-  index: number;
+  updateId: string;
   comments: Comment[];
   newComment: string;
   onCommentChange: (value: string) => void;
@@ -18,7 +18,7 @@ interface UpdateCardProps {
 
 export function UpdateCard({
   update,
-  index,
+  updateId,
   comments,
   newComment,
   onCommentChange,
@@ -28,6 +28,10 @@ export function UpdateCard({
   const [showAll, setShowAll] = useState(false);
   const visibleComments = showAll ? comments : comments.slice(-3);
   const hasMoreComments = comments.length > 3;
+
+  // Check if updateId is a valid UUID (not a fallback like "update-0")
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const canComment = uuidRegex.test(updateId);
 
   return (
     <div className="overflow-hidden rounded-lg border-2 border-primary/30 bg-gradient-to-br from-primary/10 to-primary/5 shadow-sm">
@@ -113,22 +117,30 @@ export function UpdateCard({
             </Button>
           )}
 
-          <div className="flex gap-2">
-            <Textarea
-              placeholder="Leave a message of support..."
-              value={newComment}
-              onChange={(e) => onCommentChange(e.target.value)}
-              className="min-h-[60px] resize-none"
-            />
-            <Button
-              size="icon"
-              onClick={onAddComment}
-              disabled={!newComment.trim()}
-              className="flex-shrink-0"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
-          </div>
+          {canComment ? (
+            <div className="flex gap-2">
+              <Textarea
+                placeholder="Leave a message of support..."
+                value={newComment}
+                onChange={(e) => onCommentChange(e.target.value)}
+                className="min-h-[60px] resize-none"
+              />
+              <Button
+                size="icon"
+                onClick={onAddComment}
+                disabled={!newComment.trim()}
+                className="flex-shrink-0"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-lg bg-muted/50 p-3 text-center">
+              <p className="text-xs text-muted-foreground">
+                Comments are not available for this update
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

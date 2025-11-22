@@ -454,10 +454,12 @@ export function StickyDonationWidget({
               >
                 <div className="flex items-center justify-center gap-1.5 mb-1">
                   <Shield className="h-3.5 w-3.5 md:h-4 md:w-4" />
-                  <span className="font-sans text-xs md:text-sm font-semibold">Escrow</span>
+                  <span className="font-sans text-xs md:text-sm font-semibold">
+                    Proof-Based Release
+                  </span>
                 </div>
                 <p className="font-sans text-[9px] md:text-[10px] leading-tight opacity-90">
-                  Funds released after proof of expense
+                  Proof of Expense Model
                 </p>
               </button>
               <button

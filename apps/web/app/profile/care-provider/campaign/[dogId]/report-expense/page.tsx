@@ -21,11 +21,13 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { createBrowserClient } from "@/lib/supabase/client";
 
 export default function ReportExpensePage() {
   const params = useParams();
   const router = useRouter();
   const dogId = params.dogId as string;
+  const supabase = createBrowserClient();
 
   const [expenseForm, setExpenseForm] = useState({
     title: "",
@@ -35,6 +37,8 @@ export default function ReportExpensePage() {
   });
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleProofChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -46,10 +50,116 @@ export default function ReportExpensePage() {
     }
   };
 
-  const handleSubmit = () => {
-    // Here you would save to database
-    console.log("Submitting expense:", expenseForm);
-    router.push(`/profile/care-provider/campaign/${dogId}`);
+  const handleSubmit = async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error("You must be logged in to report expenses");
+      }
+
+      console.log("Submitting expense for dog:", dogId);
+
+      const { data: careProvider, error: careProviderError } = await supabase
+        .from("care_providers")
+        .select("id")
+        .eq("auth_user_id", user.id)
+        .single();
+
+      if (careProviderError || !careProvider) {
+        throw new Error("Care provider profile not found");
+      }
+
+      console.log("Found care provider:", careProvider.id);
+
+      const { data: campaign, error: campaignError } = await supabase
+        .from("campaigns")
+        .select("id, spent")
+        .eq("dog_id", dogId)
+        .single();
+
+      if (campaignError || !campaign) {
+        throw new Error("Campaign not found for this dog");
+      }
+
+      console.log("Found campaign:", campaign.id);
+
+      // Upload proof file to Supabase Storage
+      let proofUrl: string | null = null;
+      if (expenseForm.proof) {
+        const fileExt = expenseForm.proof.name.split(".").pop();
+        const fileName = `${user.id}/${Date.now()}-${expenseForm.proof.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
+
+        console.log("Uploading proof file:", fileName);
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from("expense-proofs")
+          .upload(fileName, expenseForm.proof, {
+            cacheControl: "3600",
+            upsert: false,
+          });
+
+        if (uploadError) {
+          console.error("Error uploading proof:", uploadError);
+          throw new Error(`Failed to upload proof: ${uploadError.message}`);
+        }
+
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("expense-proofs").getPublicUrl(fileName);
+
+        proofUrl = publicUrl;
+        console.log("Proof uploaded successfully:", proofUrl);
+      }
+
+      const expenseAmount = Number.parseFloat(expenseForm.amount);
+
+      // Insert expense into database
+      const { data: expenseData, error: expenseError } = await supabase
+        .from("campaign_expenses")
+        .insert({
+          campaign_id: campaign.id,
+          dog_id: dogId,
+          title: expenseForm.title,
+          description: expenseForm.description,
+          amount: expenseAmount,
+          proof: proofUrl,
+          created_by: careProvider.id,
+        })
+        .select()
+        .single();
+
+      if (expenseError) {
+        console.error("Error creating expense:", expenseError);
+        throw new Error(`Failed to create expense: ${expenseError.message}`);
+      }
+
+      console.log("Expense created successfully:", expenseData);
+
+      // Update campaign's spent amount
+      const newSpent = Number(campaign.spent || 0) + expenseAmount;
+      const { error: updateError } = await supabase
+        .from("campaigns")
+        .update({ spent: newSpent })
+        .eq("id", campaign.id);
+
+      if (updateError) {
+        console.error("Error updating campaign spent:", updateError);
+        // Don't throw here - expense was created successfully
+        console.warn("Expense created but campaign spent amount update failed");
+      }
+
+      console.log("Expense report submitted successfully");
+      router.push(`/profile/care-provider/campaign/${dogId}`);
+    } catch (err: any) {
+      console.error("Error in handleSubmit:", err);
+      setError(err.message || "Failed to submit expense report");
+      setIsLoading(false);
+    }
   };
 
   if (showPreview) {
@@ -82,6 +192,18 @@ export default function ReportExpensePage() {
                 </div>
               </CardContent>
             </Card>
+
+            {error && (
+              <Card className="mb-4 md:mb-6 border-2 border-red-400 bg-red-50">
+                <CardContent className="flex items-start gap-2 md:gap-3 p-3 md:p-4">
+                  <AlertCircle className="h-4 w-4 md:h-5 md:w-5 flex-shrink-0 text-red-600" />
+                  <div>
+                    <h3 className="mb-1 text-sm md:text-base font-semibold text-red-900">Error</h3>
+                    <p className="text-xs md:text-sm text-red-800">{error}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             <Card className="mb-4 md:mb-6 shadow-xl">
               <CardContent className="p-4 md:p-8">
@@ -148,6 +270,7 @@ export default function ReportExpensePage() {
                 size="lg"
                 className="w-full sm:flex-1 bg-transparent"
                 onClick={() => setShowPreview(false)}
+                disabled={isLoading}
               >
                 Cancel
               </Button>
@@ -155,9 +278,10 @@ export default function ReportExpensePage() {
                 size="lg"
                 className="w-full sm:flex-1 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600"
                 onClick={handleSubmit}
+                disabled={isLoading}
               >
                 <Upload className="mr-2 h-5 w-5" />
-                Submit Expense Report
+                {isLoading ? "Submitting..." : "Submit Expense Report"}
               </Button>
             </div>
           </div>

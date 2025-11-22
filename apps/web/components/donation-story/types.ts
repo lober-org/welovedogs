@@ -34,6 +34,7 @@ export interface CareProvider {
 }
 
 export interface Update {
+  id?: string;
   title: string;
   date: string;
   description: string;

@@ -93,6 +93,7 @@ export default async function DonatePage({ params }: { params: Promise<{ dogId: 
       : undefined,
     updates:
       dog.campaign_updates?.map((update: any) => ({
+        id: update.id,
         title: update.title,
         date: new Date(update.created_at).toLocaleDateString(),
         description: update.content,

@@ -38,6 +38,13 @@ export function CampaignStatusCard({
 
   return (
     <div className="space-y-6">
+      {/* Current Condition */}
+      {dog.currentCondition && (
+        <div className="rounded-lg border bg-card p-6">
+          <h3 className="font-semibold text-lg mb-3">Current Condition</h3>
+          <p className="text-foreground/90 leading-relaxed">{dog.currentCondition}</p>
+        </div>
+      )}
       {/* Campaign Status Card */}
       <div className="rounded-lg border-2 border-primary/30 bg-gradient-to-br from-primary/10 to-primary/5 p-6 shadow-sm">
         <div className="mb-4">
@@ -110,7 +117,6 @@ export function CampaignStatusCard({
           </div>
         )}
       </div>
-
       {/* Funds Needed For */}
       {dog.fundsNeededFor && dog.fundsNeededFor.length > 0 && (
         <div className="rounded-lg border bg-card p-6">
@@ -126,14 +132,6 @@ export function CampaignStatusCard({
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Current Condition */}
-      {dog.currentCondition && (
-        <div className="rounded-lg border bg-card p-6">
-          <h3 className="font-semibold text-lg mb-3">Current Condition</h3>
-          <p className="text-foreground/90 leading-relaxed">{dog.currentCondition}</p>
         </div>
       )}
     </div>

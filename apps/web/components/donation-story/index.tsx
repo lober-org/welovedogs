@@ -32,6 +32,7 @@ import { UpdateImageModal } from "./UpdateImageModal";
 import { UpdateDialog } from "./UpdateDialog";
 import { PaginationControls } from "./PaginationControls";
 import { StarRating } from "./StarRating";
+import { toast } from "sonner";
 
 export function DonationStory({ dog }: { dog: Dog }) {
   const [sortBy, setSortBy] = useState<"date" | "amount">("date");
@@ -41,8 +42,8 @@ export function DonationStory({ dog }: { dog: Dog }) {
   const [currentPage, setCurrentPage] = useState(1);
   const postsPerPage = 3;
 
-  const [comments, setComments] = useState<Record<number, Comment[]>>({});
-  const [newComment, setNewComment] = useState<Record<number, string>>({});
+  const [comments, setComments] = useState<Record<string, Comment[]>>({});
+  const [newComment, setNewComment] = useState<Record<string, string>>({});
 
   const [selectedUpdate, setSelectedUpdate] = useState<Update | null>(null);
 
@@ -251,7 +252,10 @@ export function DonationStory({ dog }: { dog: Dog }) {
     const combined = [
       ...escrowTransactions,
       ...instantTransactions,
-      ...(dog.transactions || []).map((tx) => ({ ...tx, type: tx.type || ("instant" as const) })),
+      ...(dog.transactions || []).map((tx) => ({
+        ...tx,
+        type: tx.type || ("instant" as const),
+      })),
     ];
 
     // Remove duplicates based on txHash
@@ -289,26 +293,216 @@ export function DonationStory({ dog }: { dog: Dog }) {
     }
   };
 
-  const addComment = (updateIndex: number) => {
-    const message = newComment[updateIndex]?.trim();
-    if (!message) return;
+  // Load comments from database
+  useEffect(() => {
+    const loadComments = async () => {
+      if (!dog.updates || dog.updates.length === 0) return;
 
-    const comment: Comment = {
-      author: "Anonymous Supporter",
-      message,
-      date: "Just now",
-      badges: Math.floor(Math.random() * 7),
+      const updateIds = dog.updates.filter((update) => update.id).map((update) => update.id!);
+
+      if (updateIds.length === 0) return;
+
+      try {
+        const supabase = createBrowserClient();
+        const { data: commentsData, error } = await supabase
+          .from("update_comments")
+          .select(
+            `
+						*,
+						donors (
+							id,
+							first_name,
+							last_name
+						)
+					`
+          )
+          .in("update_id", updateIds)
+          .order("created_at", { ascending: true });
+
+        if (error) {
+          console.error("Error loading comments:", error);
+          return;
+        }
+
+        // Group comments by update_id and fetch donor badges
+        const commentsByUpdate: Record<string, Comment[]> = {};
+        const donorIds = new Set<string>();
+
+        // First pass: collect donor IDs
+        commentsData?.forEach((comment: any) => {
+          if (comment.donor_id) {
+            donorIds.add(comment.donor_id);
+          }
+        });
+
+        // Fetch all donor transactions at once
+        const donorTransactionsMap = new Map<string, number>();
+        if (donorIds.size > 0) {
+          const { data: allTransactions } = await supabase
+            .from("transactions")
+            .select("donor_id, usd_value")
+            .in("donor_id", Array.from(donorIds))
+            .eq("type", "donation");
+
+          // Calculate total donations per donor
+          allTransactions?.forEach(
+            (tx: { donor_id: string; usd_value?: number | string | null }) => {
+              const donorId = tx.donor_id;
+              const currentTotal = donorTransactionsMap.get(donorId) || 0;
+              donorTransactionsMap.set(donorId, currentTotal + Number(tx.usd_value || 0));
+            }
+          );
+        }
+
+        // Second pass: build comments with badges
+        commentsData?.forEach((comment: any) => {
+          const updateId = comment.update_id;
+          if (!commentsByUpdate[updateId]) {
+            commentsByUpdate[updateId] = [];
+          }
+
+          // Get donor name or use anonymous
+          const authorName = comment.donors
+            ? `${comment.donors.first_name || ""} ${comment.donors.last_name || ""}`.trim() ||
+              "Anonymous Supporter"
+            : comment.author_name || "Anonymous Supporter";
+
+          // Calculate badges based on donor's total donations
+          let badges = 0;
+          if (comment.donor_id) {
+            const totalDonated = donorTransactionsMap.get(comment.donor_id) || 0;
+            // Calculate badges: 1 badge per $100 donated, max 7 badges
+            badges = Math.min(Math.floor(totalDonated / 100), 7);
+          }
+
+          commentsByUpdate[updateId].push({
+            author: authorName,
+            message: comment.message,
+            date: new Date(comment.created_at).toLocaleDateString(),
+            badges: badges > 0 ? badges : undefined,
+          });
+        });
+
+        setComments(commentsByUpdate);
+      } catch (err) {
+        console.error("Error loading comments:", err);
+      }
     };
 
-    setComments((prev) => ({
-      ...prev,
-      [updateIndex]: [...(prev[updateIndex] || []), comment],
-    }));
+    loadComments();
+  }, [dog.updates]);
 
-    setNewComment((prev) => ({
-      ...prev,
-      [updateIndex]: "",
-    }));
+  const addComment = async (updateId: string) => {
+    const message = newComment[updateId]?.trim();
+    if (!message || !updateId) return;
+
+    // Validate that updateId is a valid UUID (not a fallback like "update-0")
+    // UUIDs have format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(updateId)) {
+      toast.error("Cannot comment on this update", {
+        description: "This update is not available for commenting",
+      });
+      return;
+    }
+
+    try {
+      const supabase = createBrowserClient();
+
+      // Get current user
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
+
+      if (!authUser) {
+        toast.error("Please sign in to comment", {
+          description: "You need to be signed in to leave a comment",
+        });
+        return;
+      }
+
+      // Get donor information
+      const { data: donor } = await supabase
+        .from("donors")
+        .select("id, first_name, last_name")
+        .eq("auth_user_id", authUser.id)
+        .maybeSingle();
+
+      // Calculate badges based on donor's total donations
+      let badges = 0;
+      if (donor) {
+        const { data: donorTransactions } = await supabase
+          .from("transactions")
+          .select("usd_value")
+          .eq("donor_id", donor.id)
+          .eq("type", "donation");
+
+        const totalDonated =
+          donorTransactions?.reduce(
+            (sum: number, tx: { usd_value?: number | string | null }) =>
+              sum + Number(tx.usd_value || 0),
+            0
+          ) || 0;
+
+        // Calculate badges: 1 badge per $100 donated, max 7 badges
+        badges = Math.min(Math.floor(totalDonated / 100), 7);
+      }
+
+      // Save comment to database
+      const { data: newCommentData, error } = await supabase
+        .from("update_comments")
+        .insert({
+          update_id: updateId,
+          donor_id: donor?.id || null,
+          message: message,
+          author_name: donor
+            ? `${donor.first_name || ""} ${donor.last_name || ""}`.trim() || null
+            : null,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Error saving comment:", error);
+        toast.error("Failed to save comment", {
+          description: error.message,
+        });
+        return;
+      }
+
+      // Add comment to local state using the database response
+      const authorName = donor
+        ? `${donor.first_name || ""} ${donor.last_name || ""}`.trim() || "Anonymous Supporter"
+        : newCommentData?.author_name || "Anonymous Supporter";
+
+      const comment: Comment = {
+        author: authorName,
+        message,
+        date: newCommentData?.created_at
+          ? new Date(newCommentData.created_at).toLocaleDateString()
+          : "Just now",
+        badges: badges > 0 ? badges : undefined,
+      };
+
+      setComments((prev) => ({
+        ...prev,
+        [updateId]: [...(prev[updateId] || []), comment],
+      }));
+
+      setNewComment((prev) => ({
+        ...prev,
+        [updateId]: "",
+      }));
+
+      toast.success("Comment posted!", {
+        description: "Your comment has been saved",
+      });
+    } catch (err) {
+      console.error("Error adding comment:", err);
+      toast.error("Failed to post comment", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
   };
 
   const shareUrl = typeof window !== "undefined" ? window.location.href : "";
@@ -348,24 +542,6 @@ export function DonationStory({ dog }: { dog: Dog }) {
 
   const renderTabContent = (tab: string, variant: "desktop" | "mobile" = "desktop") => {
     switch (tab) {
-      case "campaign":
-        return (
-          <>
-            <h2 className="font-sans text-xl font-bold text-foreground md:text-2xl lg:text-3xl">
-              Active Campaign
-            </h2>
-            <CampaignStatusCard
-              dog={dog}
-              totalRaised={totalRaised}
-              escrowBalance={escrowBalance}
-              instantRaised={instantRaised}
-              isLoadingBalances={isLoadingBalances}
-              campaignBalanceLoading={campaignBalanceLoading}
-              escrowContractId={escrowContractId}
-              stellarAddressToUse={stellarAddressToUse}
-            />
-          </>
-        );
       case "updates":
         return (
           <>
@@ -375,20 +551,26 @@ export function DonationStory({ dog }: { dog: Dog }) {
             {updates.length > 0 ? (
               <>
                 <div className="space-y-4 md:space-y-6">
-                  {currentUpdates.map((update, index) => (
-                    <UpdateCard
-                      key={startIndex + index}
-                      update={update}
-                      index={startIndex + index}
-                      comments={comments[startIndex + index] || []}
-                      newComment={newComment[startIndex + index] || ""}
-                      onCommentChange={(value) =>
-                        setNewComment((prev) => ({ ...prev, [startIndex + index]: value }))
-                      }
-                      onAddComment={() => addComment(startIndex + index)}
-                      onImageClick={handleUpdateImageClick}
-                    />
-                  ))}
+                  {currentUpdates.map((update, index) => {
+                    const updateId = update.id || `update-${startIndex + index}`;
+                    return (
+                      <UpdateCard
+                        key={updateId}
+                        update={update}
+                        updateId={updateId}
+                        comments={comments[updateId] || []}
+                        newComment={newComment[updateId] || ""}
+                        onCommentChange={(value) =>
+                          setNewComment((prev) => ({
+                            ...prev,
+                            [updateId]: value,
+                          }))
+                        }
+                        onAddComment={() => addComment(updateId)}
+                        onImageClick={handleUpdateImageClick}
+                      />
+                    );
+                  })}
                 </div>
                 {totalPages > 1 && (
                   <PaginationControls
@@ -411,6 +593,24 @@ export function DonationStory({ dog }: { dog: Dog }) {
             )}
           </>
         );
+      case "campaign":
+        return (
+          <>
+            <h2 className="font-sans text-xl font-bold text-foreground md:text-2xl lg:text-3xl">
+              Active Campaign
+            </h2>
+            <CampaignStatusCard
+              dog={dog}
+              totalRaised={totalRaised}
+              escrowBalance={escrowBalance}
+              instantRaised={instantRaised}
+              isLoadingBalances={isLoadingBalances}
+              campaignBalanceLoading={campaignBalanceLoading}
+              escrowContractId={escrowContractId}
+              stellarAddressToUse={stellarAddressToUse}
+            />
+          </>
+        );
       case "journey":
         return (
           <>
@@ -419,7 +619,7 @@ export function DonationStory({ dog }: { dog: Dog }) {
             </h2>
             <div className="space-y-3 text-pretty text-sm leading-relaxed text-foreground/90 md:space-y-4 md:text-base">
               {dog.story.split("\n\n").map((paragraph, index) => (
-                <p key={index}>{paragraph}</p>
+                <p key={`story-${index}-${paragraph.substring(0, 20)}`}>{paragraph}</p>
               ))}
             </div>
           </>
@@ -501,9 +701,6 @@ export function DonationStory({ dog }: { dog: Dog }) {
                   <span className="text-sm font-semibold leading-tight text-foreground hover:underline md:text-base">
                     {dog.careProvider.name}
                   </span>
-                  {dog.careProvider?.rating && (
-                    <StarRating rating={dog.careProvider.rating} size="sm" showValue />
-                  )}
                 </div>
               </Link>
             </>
