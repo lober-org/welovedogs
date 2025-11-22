@@ -8,7 +8,7 @@ import type { Route } from "next";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Heart, TrendingUp, MapPin, Shield } from "lucide-react";
+import { Heart, TrendingUp, MapPin, Shield, Building2, Stethoscope, User } from "lucide-react";
 import Image from "next/image";
 import {
   getRescuerBadgeColor,
@@ -85,6 +85,39 @@ export function DogCard({
   const totalRaised = raised + (escrowBalance || 0);
   const hasEscrow = escrowBalance !== undefined && escrowBalance > 0;
 
+  // Get rescuer type display info
+  const getRescuerTypeInfo = (type: "Shelter" | "Veterinary" | "Rescuer") => {
+    switch (type) {
+      case "Shelter":
+        return {
+          label: "Shelter",
+          icon: Building2,
+          colorClass: "bg-blue-500/20 text-blue-300 border-blue-400/30",
+        };
+      case "Veterinary":
+        return {
+          label: "Veterinary",
+          icon: Stethoscope,
+          colorClass: "bg-green-500/20 text-green-300 border-green-400/30",
+        };
+      case "Rescuer":
+        return {
+          label: "Rescuer",
+          icon: User,
+          colorClass: "bg-orange-500/20 text-orange-300 border-orange-400/30",
+        };
+      default:
+        return {
+          label: type,
+          icon: User,
+          colorClass: "bg-gray-500/20 text-gray-300 border-gray-400/30",
+        };
+    }
+  };
+
+  const rescuerTypeInfo = getRescuerTypeInfo(rescuedBy);
+  const RescuerTypeIcon = rescuerTypeInfo.icon;
+
   return (
     // biome-ignore lint/a11y/useSemanticElements: <explanation>
     <Card
@@ -148,16 +181,16 @@ export function DogCard({
             <span>{location}</span>
           </div>
 
-          <div className="mb-3 flex items-center gap-2">
+          <div className="mb-3 space-y-2">
             <span className="text-sm text-white/80">Rescued By:</span>
             {/** biome-ignore lint/a11y/noStaticElementInteractions: <explanation> */}
             {/** biome-ignore lint/a11y/useKeyWithClickEvents: <explanation> */}
             <div
               onClick={handleRescuerClick}
-              className="flex items-center gap-2 transition-transform hover:scale-105 cursor-pointer"
+              className="flex items-center gap-2 transition-transform hover:scale-105 cursor-pointer group/rescuer"
             >
               {rescuerImage && (
-                <div className="relative h-8 w-8 overflow-hidden rounded-full border-2 border-white/30">
+                <div className="relative h-10 w-10 overflow-hidden rounded-full border-2 border-white/30 group-hover/rescuer:border-white/50 transition-colors">
                   <Image
                     src={rescuerImage || "/placeholder.svg"}
                     alt={rescuerName}
@@ -166,11 +199,19 @@ export function DogCard({
                   />
                 </div>
               )}
-              <Badge
-                className={`${getRescuerBadgeColor(rescuedBy)} cursor-pointer border-0 px-2 py-0.5 text-xs transition-all hover:shadow-lg`}
-              >
-                {rescuerName}
-              </Badge>
+              <div className="flex flex-col gap-1">
+                <Badge
+                  className={`${getRescuerBadgeColor(rescuedBy)} cursor-pointer border-0 px-2 py-0.5 text-xs transition-all hover:shadow-lg w-fit`}
+                >
+                  {rescuerName}
+                </Badge>
+                <Badge
+                  className={`${rescuerTypeInfo.colorClass} cursor-pointer border px-2 py-0.5 text-xs transition-all hover:shadow-lg w-fit flex items-center gap-1`}
+                >
+                  <RescuerTypeIcon className="h-3 w-3" />
+                  <span>{rescuerTypeInfo.label}</span>
+                </Badge>
+              </div>
             </div>
           </div>
 

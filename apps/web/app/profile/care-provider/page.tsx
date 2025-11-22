@@ -1,4 +1,3 @@
-import type React from "react";
 import { createServerClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import CareProviderProfileClient from "./CareProviderProfileClient";
@@ -42,7 +41,7 @@ export default async function CareProviderProfilePage() {
     );
   }
 
-  const { data: campaigns, error: campaignsError } = await supabase
+  const { data: campaigns } = await supabase
     .from("campaigns")
     .select(
       `
@@ -57,7 +56,7 @@ export default async function CareProviderProfilePage() {
     .eq("care_provider_id", careProvider.id)
     .order("created_at", { ascending: false });
 
-  const { data: dogs, error: dogsError } = await supabase
+  const { data: dogs } = await supabase
     .from("dogs")
     .select("*")
     .eq("care_provider_id", careProvider.id)
@@ -65,7 +64,7 @@ export default async function CareProviderProfilePage() {
 
   // Fetch donation totals for all campaigns
   const campaignIds = campaigns?.map((c) => c.id) || [];
-  let donationTotals: Record<string, number> = {};
+  const donationTotals: Record<string, number> = {};
 
   if (campaignIds.length > 0) {
     const { data: donations } = await supabase
@@ -86,6 +85,32 @@ export default async function CareProviderProfilePage() {
     });
   }
 
+  // Handle social media fields - check both separate columns and nested object formats
+  // Some records may have social_media as JSON, others may have separate columns
+  const careProviderData = careProvider as Record<string, unknown>;
+  const socialMediaLinkedin =
+    (careProviderData.social_linkedin as string) ||
+    ((careProviderData.social_media as Record<string, unknown>)?.linkedin as string) ||
+    "";
+  const socialMediaInstagram =
+    (careProviderData.social_instagram as string) ||
+    ((careProviderData.social_media as Record<string, unknown>)?.instagram as string) ||
+    "";
+
+  // Handle location - prioritize location field, then city/state, then city/country
+  let location = careProvider.location || "";
+  if (!location) {
+    if (careProvider.city && careProvider.state) {
+      location = `${careProvider.city}, ${careProvider.state}`;
+    } else if (careProvider.city && careProvider.country) {
+      location = `${careProvider.city}, ${careProvider.country}`;
+    } else if (careProvider.city) {
+      location = careProvider.city;
+    } else if (careProvider.country) {
+      location = careProvider.country;
+    }
+  }
+
   const profileData = {
     name: careProvider.name || "Care Provider",
     clinicName: careProvider.clinic_name || careProvider.org_name || "",
@@ -94,9 +119,9 @@ export default async function CareProviderProfilePage() {
     email: careProvider.email || "",
     phone: careProvider.phone || "",
     website: careProvider.website || "",
-    linkedin: careProvider.social_media?.linkedin || "",
-    instagram: careProvider.social_media?.instagram || "",
-    location: careProvider.location || `${careProvider.city}, ${careProvider.state}`,
+    linkedin: socialMediaLinkedin,
+    instagram: socialMediaInstagram,
+    location: location,
     rating: Number(careProvider.rating || 0),
     dogsHelped: careProvider.dogs_helped || 0,
     story: careProvider.story || null,

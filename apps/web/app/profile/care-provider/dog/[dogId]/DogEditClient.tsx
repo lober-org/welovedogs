@@ -136,6 +136,7 @@ export default function DogEditClient({ dog: initialDog }: { dog: Dog }) {
                 <div className="flex gap-2 mt-2">
                   {dog.images.map((image, index) => (
                     <div
+                      // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
                       key={index}
                       className="relative h-24 w-24 rounded-lg overflow-hidden border"
                     >
@@ -213,7 +214,7 @@ export default function DogEditClient({ dog: initialDog }: { dog: Dog }) {
 
               {/* Current Condition */}
               <div>
-                <Label htmlFor="current_condition">Current Condition</Label>
+                <Label htmlFor="current_condition">About</Label>
                 <Textarea
                   id="current_condition"
                   value={dog.current_condition}

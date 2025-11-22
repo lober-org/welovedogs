@@ -77,6 +77,24 @@ export default async function ShelterProfilePage({ params }: { params: Promise<{
     .order("created_at", { ascending: false })
     .limit(10);
 
+  // Handle social media fields - check both separate columns and nested object formats
+  const shelterDataRecord = shelter as Record<string, unknown>;
+  const socialMediaFacebook =
+    (shelterDataRecord.social_facebook as string) ||
+    ((shelterDataRecord.social_media as Record<string, unknown>)?.facebook as string) ||
+    "";
+  const socialMediaInstagram =
+    (shelterDataRecord.social_instagram as string) ||
+    ((shelterDataRecord.social_media as Record<string, unknown>)?.instagram as string) ||
+    "";
+
+  // Handle description - check multiple possible fields
+  const description =
+    (shelter.description as string) ||
+    (shelter.about as string) ||
+    (shelter.org_description as string) ||
+    "";
+
   // Transform data for client component
   const shelterData = {
     id: shelter.id,
@@ -90,10 +108,10 @@ export default async function ShelterProfilePage({ params }: { params: Promise<{
     phone: shelter.phone,
     website: shelter.website,
     socialMedia: {
-      facebook: shelter.social_facebook,
-      instagram: shelter.social_instagram,
+      facebook: socialMediaFacebook,
+      instagram: socialMediaInstagram,
     },
-    description: shelter.description || "",
+    description: description,
     story: shelter.story || null,
     dogsInCare: shelter.dogs?.length || 0,
     partnerships: shelter.partnerships || "",

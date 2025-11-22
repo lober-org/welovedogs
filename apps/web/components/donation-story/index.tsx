@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import type { Route } from "next";
-import { MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -27,6 +26,7 @@ import { ExpenseReport } from "./ExpenseReport";
 import { UpdateImageModal } from "./UpdateImageModal";
 import { UpdateDialog } from "./UpdateDialog";
 import { PaginationControls } from "./PaginationControls";
+import { DonationCarousel } from "./DonationCarousel";
 import { toast } from "sonner";
 
 export function DonationStory({ dog }: { dog: Dog }) {
@@ -561,21 +561,17 @@ export function DonationStory({ dog }: { dog: Dog }) {
         </div>
       </div>
 
-      {/* Image Gallery and Headline */}
+      {/* Image Gallery and Carousel */}
       <div className="grid gap-3 md:grid-cols-2 md:gap-4 md:items-stretch">
         <ImageGallery images={dog.images} alt={dog.name} />
-        {dog.headline && (
-          <div className="relative flex flex-col items-center justify-center rounded-lg border-2 border-primary/30 bg-gradient-to-br from-primary/10 to-primary/5 p-6 md:p-8 shadow-sm">
-            <SharePopover shareUrl={shareUrl} shareText={shareText} />
-            <h2 className="font-sans text-2xl font-bold leading-tight text-foreground md:text-3xl lg:text-4xl text-balance text-center">
-              {dog.headline}
-            </h2>
-            <div className="mt-4 flex items-center gap-1.5 text-muted-foreground">
-              <MapPin className="h-4 w-4" />
-              <span className="text-sm md:text-base">{dog.location}</span>
-            </div>
-          </div>
-        )}
+        <DonationCarousel
+          dog={dog}
+          totalRaised={totalRaised}
+          goal={dog.goal}
+          spent={dog.spent || 0}
+          shareUrl={shareUrl}
+          shareText={shareText}
+        />
       </div>
 
       <Button

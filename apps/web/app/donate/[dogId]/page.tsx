@@ -25,7 +25,8 @@ export default async function DonatePage({ params }: { params: Promise<{ dogId: 
         headline,
         created_at,
         escrow_id,
-        stellar_address
+        stellar_address,
+        funds_needed_for
       ),
       campaign_updates(*),
       campaign_expenses(*)
@@ -75,7 +76,13 @@ export default async function DonatePage({ params }: { params: Promise<{ dogId: 
     images: Array.isArray(dog.images) ? dog.images : [],
     categoryTags: Array.isArray(dog.category_tags) ? dog.category_tags : [],
     currentCondition: dog.current_condition,
-    fundsNeededFor: Array.isArray(dog.funds_needed_for) ? dog.funds_needed_for : [],
+    fundsNeededFor: activeCampaign?.funds_needed_for
+      ? Array.isArray(activeCampaign.funds_needed_for)
+        ? activeCampaign.funds_needed_for
+        : []
+      : Array.isArray(dog.funds_needed_for)
+        ? dog.funds_needed_for
+        : [],
     story: dog.story,
     raised: activeCampaign ? Number(activeCampaign.raised) || 0 : 0,
     goal: activeCampaign ? Number(activeCampaign.goal) || 0 : 0,
@@ -130,7 +137,7 @@ export default async function DonatePage({ params }: { params: Promise<{ dogId: 
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-3 md:px-6 lg:px-8 xl:px-12 py-4 md:py-8 md:py-12 max-w-[1400px]">
+      <div className="container mx-auto px-3 md:px-6 lg:px-8 xl:px-12 py-4 md:py-8 lg:py-12 max-w-[1400px]">
         {!activeCampaign && (
           <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
             <p className="text-yellow-800">

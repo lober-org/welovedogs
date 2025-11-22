@@ -81,6 +81,24 @@ export default async function VeterinaryProfilePage({
     .order("created_at", { ascending: false })
     .limit(10);
 
+  // Handle social media fields - check both separate columns and nested object formats
+  const vetDataRecord = vet as Record<string, unknown>;
+  const socialMediaLinkedin =
+    (vetDataRecord.social_linkedin as string) ||
+    ((vetDataRecord.social_media as Record<string, unknown>)?.linkedin as string) ||
+    "";
+  const socialMediaInstagram =
+    (vetDataRecord.social_instagram as string) ||
+    ((vetDataRecord.social_media as Record<string, unknown>)?.instagram as string) ||
+    "";
+  const socialMediaFacebook =
+    (vetDataRecord.social_facebook as string) ||
+    ((vetDataRecord.social_media as Record<string, unknown>)?.facebook as string) ||
+    "";
+
+  // Handle description - check multiple possible fields
+  const description = (vet.description as string) || (vet.about as string) || "";
+
   // Transform data for client component - pass as props to avoid client-side mock data
   const veterinarianData = {
     id: vet.id,
@@ -93,11 +111,11 @@ export default async function VeterinaryProfilePage({
     phone: vet.phone,
     website: vet.website,
     socialMedia: {
-      linkedin: vet.social_linkedin,
-      instagram: vet.social_instagram,
-      facebook: vet.social_facebook,
+      linkedin: socialMediaLinkedin,
+      instagram: socialMediaInstagram,
+      facebook: socialMediaFacebook,
     },
-    description: vet.description || "",
+    description: description,
     story: vet.story || null,
     rating: vet.rating || 4.8,
     totalReceived:
