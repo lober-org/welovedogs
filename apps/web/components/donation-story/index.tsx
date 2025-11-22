@@ -89,9 +89,10 @@ export function DonationStory({ dog }: { dog: Dog }) {
     // dog.transactions is already filtered to donations from the server query
     // Map transactions to include type information
     return (dog.transactions || []).map((tx) => {
-      // Check if transaction has donation_type property to determine escrow vs instant
+      // Check donation_type field to determine escrow vs instant
+      // tx.type is "donation" from database, so we check donation_type instead
       const txWithType = tx as Transaction & { donation_type?: string };
-      const isEscrow = tx.type === "escrow" || txWithType.donation_type === "escrow";
+      const isEscrow = txWithType.donation_type === "escrow";
 
       return {
         ...tx,
@@ -106,8 +107,9 @@ export function DonationStory({ dog }: { dog: Dog }) {
     let instantTotal = 0;
 
     (dog.transactions || []).forEach((tx) => {
+      // Check donation_type field to determine escrow vs instant
       const txWithType = tx as Transaction & { donation_type?: string };
-      const isEscrow = tx.type === "escrow" || txWithType.donation_type === "escrow";
+      const isEscrow = txWithType.donation_type === "escrow";
       const amount = tx.usdValue || 0;
 
       if (isEscrow) {

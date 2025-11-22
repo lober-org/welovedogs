@@ -50,6 +50,7 @@ export interface Transaction {
   txHash: string;
   explorerUrl: string;
   type?: "escrow" | "instant";
+  donation_type?: string; // "escrow" or "instant" from database
 }
 
 export interface Expense {

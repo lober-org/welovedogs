@@ -81,23 +81,29 @@ export function DogCards() {
 
         const totals: Record<string, { total: number; escrow: number; instant: number }> = {};
 
-        transactions?.forEach((tx) => {
-          const campaignId = tx.campaign_id;
-          if (!campaignId) return;
+        transactions?.forEach(
+          (tx: {
+            campaign_id: string | null;
+            usd_value: number | null;
+            donation_type: string | null;
+          }) => {
+            const campaignId = tx.campaign_id;
+            if (!campaignId) return;
 
-          if (!totals[campaignId]) {
-            totals[campaignId] = { total: 0, escrow: 0, instant: 0 };
+            if (!totals[campaignId]) {
+              totals[campaignId] = { total: 0, escrow: 0, instant: 0 };
+            }
+
+            const amount = Number(tx.usd_value || 0);
+            totals[campaignId].total += amount;
+
+            if (tx.donation_type === "escrow") {
+              totals[campaignId].escrow += amount;
+            } else if (tx.donation_type === "instant") {
+              totals[campaignId].instant += amount;
+            }
           }
-
-          const amount = Number(tx.usd_value || 0);
-          totals[campaignId].total += amount;
-
-          if (tx.donation_type === "escrow") {
-            totals[campaignId].escrow += amount;
-          } else if (tx.donation_type === "instant") {
-            totals[campaignId].instant += amount;
-          }
-        });
+        );
 
         setDonationTotals(totals);
       } catch (err) {

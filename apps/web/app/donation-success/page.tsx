@@ -194,12 +194,97 @@ function DonationSuccessContent() {
         setTransactionId(recordResult.transactionId);
 
         // The API route already updates quest progress, so we just fetch the updated data
-        // Only fetch if we have a donorId (from the response or state)
-        const updatedDonorId = recordResult.donorId || donorId;
+        // Try to get donorId from response, state, or by looking up the transaction
+        let updatedDonorId = recordResult.donorId || donorId;
+
+        // If still no donorId, try to find it from the transaction or donor address
+        if (!updatedDonorId && recordResult.transactionId) {
+          const supabase = createBrowserClient();
+
+          // Try to get donorId from the transaction record
+          const { data: transaction } = await supabase
+            .from("transactions")
+            .select("donor_id")
+            .eq("id", recordResult.transactionId)
+            .maybeSingle();
+
+          if (transaction?.donor_id) {
+            updatedDonorId = transaction.donor_id;
+            setDonorId(transaction.donor_id);
+          } else if (donorAddress) {
+            // Try to find donor by stellar_address
+            const { data: donorByAddress } = await supabase
+              .from("donors")
+              .select("id")
+              .eq("stellar_address", donorAddress)
+              .maybeSingle();
+
+            if (donorByAddress?.id) {
+              updatedDonorId = donorByAddress.id;
+              setDonorId(donorByAddress.id);
+            }
+          }
+        }
 
         if (updatedDonorId) {
-          // Fetch updated quest progress and achievements
+          // Wait for the transaction to be fully recorded and quest progress to update
+          // Increased delay to ensure escrow donations are fully processed
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+
           const supabase = createBrowserClient();
+
+          // Retry mechanism to ensure transaction is recorded
+          let transactions = null;
+          let retries = 0;
+          const maxRetries = 3;
+
+          while (retries < maxRetries) {
+            // Check if the current donation transaction exists
+            if (recordResult.transactionId) {
+              const { data: currentTx } = await supabase
+                .from("transactions")
+                .select("id")
+                .eq("id", recordResult.transactionId)
+                .maybeSingle();
+
+              if (currentTx) {
+                // Transaction exists, now fetch all transactions for stats
+                const { data: txData, error: txError } = await supabase
+                  .from("transactions")
+                  .select("usd_value, dog_id")
+                  .eq("donor_id", updatedDonorId)
+                  .eq("type", "donation");
+
+                if (!txError && txData) {
+                  transactions = txData;
+                  break;
+                }
+              }
+            } else {
+              // No transactionId, just fetch all transactions
+              const { data: txData, error: txError } = await supabase
+                .from("transactions")
+                .select("usd_value, dog_id")
+                .eq("donor_id", updatedDonorId)
+                .eq("type", "donation");
+
+              if (txError) {
+                console.error("[donation-success] Error fetching transactions:", txError);
+              }
+
+              if (txData && txData.length > 0) {
+                transactions = txData;
+                break;
+              }
+            }
+
+            if (retries < maxRetries - 1) {
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+            retries++;
+          }
+
+          // Fetch updated quest progress and achievements
           const { data: progress } = await supabase
             .from("donor_quest_progress")
             .select(
@@ -235,20 +320,88 @@ function DonationSuccessContent() {
             .eq("donor_id", updatedDonorId)
             .order("earned_at", { ascending: false });
 
-          // Get donor stats
-          const { data: donor } = await supabase
-            .from("donors")
-            .select("total_donations, dogs_supported")
-            .eq("id", updatedDonorId)
-            .single();
+          // Always calculate stats from transactions to get the most up-to-date data
+          // This ensures escrow donations are included immediately after recording
+          if (transactions && transactions.length > 0) {
+            const calculatedTotal = transactions.reduce(
+              (sum: number, tx: { usd_value: number | null; dog_id: string | null }) =>
+                sum + Number(tx.usd_value || 0),
+              0
+            );
+            const calculatedDogs = new Set(
+              transactions
+                .map((tx: { usd_value: number | null; dog_id: string | null }) => tx.dog_id)
+                .filter(Boolean)
+            ).size;
 
-          if (donor) {
-            setTotalDonated(donor.total_donations || 0);
-            setDogsSupported(donor.dogs_supported || 0);
+            setTotalDonated(calculatedTotal);
+            setDogsSupported(calculatedDogs);
+
+            console.log("[donation-success] Updated stats from transactions:", {
+              totalDonated: calculatedTotal,
+              dogsSupported: calculatedDogs,
+              transactionCount: transactions.length,
+              retries,
+            });
+          } else {
+            // Fallback to donor table if no transactions found yet
+            const { data: donor } = await supabase
+              .from("donors")
+              .select("total_donations, dogs_supported")
+              .eq("id", updatedDonorId)
+              .maybeSingle();
+
+            if (donor) {
+              setTotalDonated(donor.total_donations || 0);
+              setDogsSupported(donor.dogs_supported || 0);
+              console.log(
+                "[donation-success] Using donor table stats (transactions not found yet):",
+                {
+                  totalDonated: donor.total_donations,
+                  dogsSupported: donor.dogs_supported,
+                }
+              );
+            }
           }
 
           setQuestProgress(progress || []);
           setAchievements(achievementsData || []);
+        } else {
+          // Even without donorId, try to calculate stats from transactions using donorAddress
+          // Wait a bit for transaction to be recorded
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+
+          if (donorAddress) {
+            const supabase = createBrowserClient();
+            const { data: transactions } = await supabase
+              .from("transactions")
+              .select("usd_value, dog_id")
+              .eq("donor_address", donorAddress)
+              .eq("type", "donation");
+
+            if (transactions && transactions.length > 0) {
+              const calculatedTotal = transactions.reduce(
+                (sum: number, tx: { usd_value: number | null; dog_id: string | null }) =>
+                  sum + Number(tx.usd_value || 0),
+                0
+              );
+              const calculatedDogs = new Set(
+                transactions
+                  .map((tx: { usd_value: number | null; dog_id: string | null }) => tx.dog_id)
+                  .filter(Boolean)
+              ).size;
+
+              setTotalDonated(calculatedTotal);
+              setDogsSupported(calculatedDogs);
+
+              console.log("[donation-success] Updated stats from donorAddress:", {
+                totalDonated: calculatedTotal,
+                dogsSupported: calculatedDogs,
+                transactionCount: transactions.length,
+                donorAddress,
+              });
+            }
+          }
         }
 
         toast.success("Donation recorded!", {

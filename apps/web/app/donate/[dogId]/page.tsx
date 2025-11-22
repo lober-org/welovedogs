@@ -115,6 +115,7 @@ export default async function DonatePage({ params }: { params: Promise<{ dogId: 
         donor: tx.donor_address,
         txHash: tx.tx_hash,
         explorerUrl: tx.explorer_url,
+        donation_type: tx.donation_type, // Include donation_type for escrow/instant detection
       })) || [],
     expenses:
       dog.campaign_expenses?.map((expense: any) => ({

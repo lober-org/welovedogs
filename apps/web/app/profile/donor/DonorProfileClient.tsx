@@ -51,6 +51,9 @@ interface Donation {
   amount: number;
   date: string;
   transactionHash: string;
+  donationType?: "escrow" | "instant";
+  escrowContractId?: string | null;
+  campaignId?: string | null;
 }
 
 interface Quest {

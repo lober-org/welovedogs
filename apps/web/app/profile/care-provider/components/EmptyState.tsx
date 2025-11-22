@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import type { Route } from "next";
 
 interface EmptyStateProps {
   message: string;
   actionLabel: string;
-  actionHref: string;
+  actionHref: Route;
 }
 
 export function EmptyState({ message, actionLabel, actionHref }: EmptyStateProps) {

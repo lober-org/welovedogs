@@ -5,11 +5,12 @@ import { createServerClient } from "@/lib/supabase/server";
 export async function updateQuestProgress(donorId: string) {
   const supabase = await createServerClient();
 
-  // Get donor's transactions
+  // Get donor's donation transactions only
   const { data: transactions } = await supabase
     .from("transactions")
     .select("*")
-    .eq("donor_id", donorId);
+    .eq("donor_id", donorId)
+    .eq("type", "donation");
 
   if (!transactions || transactions.length === 0) {
     return { success: true, message: "No transactions to process" };
