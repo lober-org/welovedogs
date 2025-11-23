@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MapPin, Heart, TrendingUp, Trophy, Star, Users, Shield } from "lucide-react";
+import { MapPin, Heart, TrendingUp, Trophy, Star, Users } from "lucide-react";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 
@@ -385,31 +385,6 @@ export function CareProviderCards() {
                       <p className="mb-4 text-sm leading-relaxed text-white/90 line-clamp-2">
                         {displayDescription}
                       </p>
-
-                      {/* Reputation and Level Badge */}
-                      {provider.reputation !== undefined && provider.level && (
-                        <div className="mb-4 flex items-center gap-3 rounded-lg bg-white/10 p-3 backdrop-blur-sm">
-                          <div className="flex items-center gap-2">
-                            <Shield className="h-5 w-5 text-white/90" />
-                            <div className="flex flex-col">
-                              <span className="text-xs text-white/70">Reputation</span>
-                              <span className="text-base font-bold text-white">
-                                {provider.reputation}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="h-8 w-px bg-white/20" />
-                          <div className="flex items-center gap-2">
-                            <span className="text-xl">{provider.level.icon}</span>
-                            <div className="flex flex-col">
-                              <span className="text-xs text-white/70">Level</span>
-                              <span className="text-sm font-bold text-white">
-                                {provider.level.name}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
 
                       {/* Stats Grid */}
                       <div className="mb-4 grid grid-cols-2 gap-3">

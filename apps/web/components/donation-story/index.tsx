@@ -582,7 +582,7 @@ export function DonationStory({ dog }: { dog: Dog }) {
       </Button>
 
       {/* Desktop Tabs */}
-      <Tabs defaultValue="campaign" className="w-full hidden md:block">
+      <Tabs defaultValue="updates" className="w-full hidden md:block">
         <TabsList className="mb-4 w-full justify-start overflow-x-auto overflow-y-hidden bg-muted/50 p-1.5 md:mb-6 flex md:grid md:grid-cols-6 gap-2">
           <TabsTrigger
             value="updates"

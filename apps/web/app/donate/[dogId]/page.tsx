@@ -1,161 +1,67 @@
 import { notFound } from "next/navigation";
 import { DonationStory } from "@/components/donation-story";
 import { StickyDonationWidget } from "@/components/sticky-donation-widget";
-import { createClient } from "@/lib/supabase/server";
+import {
+  fetchDogData,
+  fetchDonationTransactions,
+  findActiveCampaign,
+  transformDogData,
+} from "@/lib/utils/donate-page";
 
 export default async function DonatePage({ params }: { params: Promise<{ dogId: string }> }) {
   const { dogId } = await params;
 
   console.log("Fetching dog with ID:", dogId);
 
-  const supabase = await createClient();
+  try {
+    const dog = await fetchDogData(dogId);
+    const donationTransactions = await fetchDonationTransactions(dogId);
 
-  const { data: dog, error } = await supabase
-    .from("dogs")
-    .select(
-      `
-      *,
-      care_provider:care_providers(*),
-      campaigns(
-        id,
-        raised,
-        goal,
-        spent,
-        status,
-        headline,
-        created_at,
-        escrow_id,
-        stellar_address,
-        funds_needed_for
-      ),
-      campaign_updates(*),
-      campaign_expenses(*)
-    `
-    )
-    .eq("id", dogId)
-    .maybeSingle();
+    if (!dog) {
+      console.log("Dog not found");
+      notFound();
+    }
 
-  // Fetch only donation transactions separately
-  const { data: donationTransactions } = await supabase
-    .from("transactions")
-    .select("*")
-    .eq("dog_id", dogId)
-    .eq("type", "donation")
-    .order("created_at", { ascending: false });
+    const activeCampaign = findActiveCampaign(dog.campaigns);
+    console.log("Active campaign found:", !!activeCampaign);
 
-  if (error) {
-    console.error("Error fetching dog:", {
-      message: error?.message || "Unknown error",
-      details: error?.details || null,
-      hint: error?.hint || null,
-      error: error,
-    });
-    notFound();
-  }
+    const transformedDog = transformDogData(dog, activeCampaign, donationTransactions);
 
-  if (!dog) {
-    console.log("Dog not found");
-    notFound();
-  }
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="container mx-auto px-3 md:px-6 lg:px-8 xl:px-12 py-4 md:py-8 lg:py-12 max-w-[1400px]">
+          {!activeCampaign && (
+            <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-yellow-800">
+                This dog doesn't have an active fundraising campaign yet. Check back soon!
+              </p>
+            </div>
+          )}
 
-  const activeCampaign = Array.isArray(dog.campaigns)
-    ? dog.campaigns.find((c: any) => c.status === "Active")
-    : dog.campaigns?.status === "Active"
-      ? dog.campaigns
-      : null;
+          <div className="grid gap-6 lg:grid-cols-[1fr_340px] xl:gap-12 lg:items-start">
+            <div className="min-w-0 w-full">
+              <DonationStory dog={transformedDog} />
+            </div>
 
-  console.log("Active campaign found:", !!activeCampaign);
-
-  const transformedDog = {
-    id: dog.id,
-    name: dog.name,
-    location: dog.location,
-    headline: activeCampaign?.headline || dog.headline,
-    isEmergency: dog.is_emergency || false,
-    emergencyExplanation: dog.emergency_explanation,
-    images: Array.isArray(dog.images) ? dog.images : [],
-    categoryTags: Array.isArray(dog.category_tags) ? dog.category_tags : [],
-    currentCondition: dog.current_condition,
-    fundsNeededFor: activeCampaign?.funds_needed_for
-      ? Array.isArray(activeCampaign.funds_needed_for)
-        ? activeCampaign.funds_needed_for
-        : []
-      : Array.isArray(dog.funds_needed_for)
-        ? dog.funds_needed_for
-        : [],
-    story: dog.story,
-    raised: activeCampaign ? Number(activeCampaign.raised) || 0 : 0,
-    goal: activeCampaign ? Number(activeCampaign.goal) || 0 : 0,
-    spent: activeCampaign ? Number(activeCampaign.spent) || 0 : 0,
-    confirmation: dog.confirmation,
-    campaignId: activeCampaign?.id,
-    campaignStellarAddress: activeCampaign?.stellar_address || undefined,
-    careProvider: dog.care_provider
-      ? {
-          id: dog.care_provider.id,
-          name: dog.care_provider.name,
-          type: dog.care_provider.type,
-          location: dog.care_provider.location,
-          image: dog.care_provider.profile_photo || dog.care_provider.image,
-          rating: Number(dog.care_provider.rating) || 0,
-          about: dog.care_provider.about,
-          description: dog.care_provider.description,
-          email: dog.care_provider.email,
-          phone: dog.care_provider.phone,
-          website: dog.care_provider.website,
-        }
-      : undefined,
-    updates:
-      dog.campaign_updates?.map((update: any) => ({
-        id: update.id,
-        title: update.title,
-        date: new Date(update.created_at).toLocaleDateString(),
-        description: update.content,
-        image: update.image,
-      })) || [],
-    transactions:
-      donationTransactions?.map((tx: any) => ({
-        date: new Date(tx.created_at).toLocaleDateString(),
-        cryptoAmount: tx.crypto_amount,
-        tokenSymbol: tx.token_symbol,
-        usdValue: Number(tx.usd_value) || 0,
-        donor: tx.donor_address,
-        txHash: tx.tx_hash,
-        explorerUrl: tx.explorer_url,
-        donation_type: tx.donation_type, // Include donation_type for escrow/instant detection
-      })) || [],
-    expenses:
-      dog.campaign_expenses?.map((expense: any) => ({
-        id: expense.id,
-        title: expense.title,
-        description: expense.description,
-        amount: Number(expense.amount) || 0,
-        date: new Date(expense.created_at).toLocaleDateString(),
-        proof: expense.proof,
-      })) || [],
-  };
-
-  return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-3 md:px-6 lg:px-8 xl:px-12 py-4 md:py-8 lg:py-12 max-w-[1400px]">
-        {!activeCampaign && (
-          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-            <p className="text-yellow-800">
-              This dog doesn't have an active fundraising campaign yet. Check back soon!
-            </p>
-          </div>
-        )}
-
-        <div className="grid gap-6 lg:grid-cols-[1fr_340px] xl:gap-12 lg:items-start">
-          <div className="min-w-0 w-full">
-            <DonationStory dog={transformedDog} />
+            <div className="hidden lg:block">
+              <StickyDonationWidget
+                dogName={transformedDog.name}
+                raised={transformedDog.raised}
+                spent={transformedDog.spent || 0}
+                fundsNeededFor={transformedDog.fundsNeededFor}
+                campaignId={activeCampaign?.id}
+                careProviderAddress={dog.care_provider?.stellar_address || undefined}
+                campaignStellarAddress={activeCampaign?.stellar_address || undefined}
+                goal={activeCampaign ? Number(activeCampaign.goal) || 0 : 0}
+              />
+            </div>
           </div>
 
-          <div className="hidden lg:block">
+          <div className="lg:hidden mt-6">
             <StickyDonationWidget
               dogName={transformedDog.name}
               raised={transformedDog.raised}
-              spent={transformedDog.spent}
+              spent={transformedDog.spent || 0}
               fundsNeededFor={transformedDog.fundsNeededFor}
               campaignId={activeCampaign?.id}
               careProviderAddress={dog.care_provider?.stellar_address || undefined}
@@ -164,20 +70,10 @@ export default async function DonatePage({ params }: { params: Promise<{ dogId: 
             />
           </div>
         </div>
-
-        <div className="lg:hidden mt-6">
-          <StickyDonationWidget
-            dogName={transformedDog.name}
-            raised={transformedDog.raised}
-            spent={transformedDog.spent}
-            fundsNeededFor={transformedDog.fundsNeededFor}
-            campaignId={activeCampaign?.id}
-            careProviderAddress={dog.care_provider?.stellar_address || undefined}
-            campaignStellarAddress={activeCampaign?.stellar_address || undefined}
-            goal={activeCampaign ? Number(activeCampaign.goal) || 0 : 0}
-          />
-        </div>
       </div>
-    </div>
-  );
+    );
+  } catch (error) {
+    console.error("Error loading donate page:", error);
+    notFound();
+  }
 }

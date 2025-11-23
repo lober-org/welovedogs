@@ -215,47 +215,96 @@ export function DogCard({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="flex items-center gap-1 text-white/80">
-                <TrendingUp className="h-4 w-4" />
-                Total Raised
-              </span>
-              <span className="font-semibold text-white text-lg">
-                {formatCurrencyDisplay(totalRaised)}
-              </span>
-            </div>
-            {hasEscrow && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-1 text-white/70 text-xs">
-                  <Shield className="h-3 w-3" />
-                  Escrow
-                </span>
-                <span className="font-medium text-white/90 text-sm">
-                  {isLoadingEscrow ? "..." : formatCurrencyDisplay(escrowBalance || 0)}
-                </span>
-              </div>
-            )}
-            {raised > 0 && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-1 text-white/70 text-xs">
-                  <TrendingUp className="h-3 w-3" />
-                  Instant
-                </span>
-                <span className="font-medium text-white/90 text-sm">
-                  {formatCurrencyDisplay(raised)}
-                </span>
-              </div>
-            )}
-            {goal && (
-              <div className="flex items-center justify-between text-sm border-t border-white/20 pt-2 mt-1">
-                <span className="flex items-center gap-1 text-white/80">
-                  <TrendingUp className="h-4 w-4" />
-                  Goal
-                </span>
-                <span className="font-semibold text-white text-lg">
-                  {formatCurrencyDisplay(goal)}
-                </span>
+          <div className="space-y-3">
+            {/* Progress Bar Section */}
+            {goal && goal > 0 ? (
+              <>
+                <div className="space-y-2">
+                  {/* Progress Bar */}
+                  <div className="relative h-4 w-full overflow-hidden rounded-full bg-white/20">
+                    {/* Instant Donations (shown first/lower layer) */}
+                    {raised > 0 && (
+                      <div
+                        className="absolute left-0 top-0 h-full bg-gradient-to-r from-yellow-200 to-yellow-300 transition-all duration-500"
+                        style={{
+                          width: `${Math.min((raised / goal) * 100, 100)}%`,
+                        }}
+                        title={`Instant: ${formatCurrencyDisplay(raised)}`}
+                      />
+                    )}
+                    {/* Escrow Donations (shown on top, stacked after instant) */}
+                    {hasEscrow && escrowBalance && escrowBalance > 0 && (
+                      <div
+                        className="absolute top-0 h-full bg-gradient-to-r from-blue-400 to-blue-500 transition-all duration-500"
+                        style={{
+                          left: `${Math.min((raised / goal) * 100, 100)}%`,
+                          width: `${Math.min((escrowBalance / goal) * 100, 100 - Math.min((raised / goal) * 100, 100))}%`,
+                        }}
+                        title={`Escrow: ${formatCurrencyDisplay(escrowBalance)}`}
+                      />
+                    )}
+                  </div>
+
+                  {/* Amounts Display */}
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-3">
+                      {hasEscrow && escrowBalance && escrowBalance > 0 && (
+                        <div className="flex items-center gap-1">
+                          <div className="h-2 w-2 rounded-full bg-blue-400" />
+                          <span className="text-white/70">
+                            {isLoadingEscrow ? "..." : formatCurrencyDisplay(escrowBalance)}
+                          </span>
+                        </div>
+                      )}
+                      {raised > 0 && (
+                        <div className="flex items-center gap-1">
+                          <div className="h-2 w-2 rounded-full bg-yellow-300" />
+                          <span className="text-white/70">{formatCurrencyDisplay(raised)}</span>
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-white/80">
+                      {formatCurrencyDisplay(totalRaised)} / {formatCurrencyDisplay(goal)}
+                    </span>
+                  </div>
+
+                  {/* Percentage */}
+                  <div className="text-center">
+                    <span className="text-sm font-semibold text-white">
+                      {Math.min(Math.round((totalRaised / goal) * 100), 100)}% funded
+                    </span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center gap-1 text-white/80">
+                    <TrendingUp className="h-4 w-4" />
+                    Total Raised
+                  </span>
+                  <span className="font-semibold text-white text-lg">
+                    {formatCurrencyDisplay(totalRaised)}
+                  </span>
+                </div>
+                {hasEscrow && escrowBalance && escrowBalance > 0 && (
+                  <div className="flex items-center justify-between text-xs text-white/70">
+                    <span className="flex items-center gap-1">
+                      <Shield className="h-3 w-3" />
+                      Escrow
+                    </span>
+                    <span>{isLoadingEscrow ? "..." : formatCurrencyDisplay(escrowBalance)}</span>
+                  </div>
+                )}
+                {raised > 0 && (
+                  <div className="flex items-center justify-between text-xs text-white/70">
+                    <span className="flex items-center gap-1">
+                      <TrendingUp className="h-3 w-3" />
+                      Instant
+                    </span>
+                    <span>{formatCurrencyDisplay(raised)}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>

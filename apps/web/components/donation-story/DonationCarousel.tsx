@@ -5,7 +5,6 @@ import useEmblaCarousel from "embla-carousel-react";
 import { MapPin, TrendingUp, Target, DollarSign, Heart, Trophy, Star, Clock } from "lucide-react";
 import { SharePopover } from "./SharePopover";
 import { createBrowserClient } from "@/lib/supabase/client";
-import { iconMap } from "./utils";
 import type { Dog } from "./types";
 
 interface DonationCarouselProps {
@@ -179,38 +178,6 @@ export function DonationCarousel({
                 <MapPin className="h-4 w-4 md:h-5 md:w-5" />
                 <span className="text-sm md:text-base">{dog.location}</span>
               </div>
-
-              {/* Funds Needed For */}
-              {dog.fundsNeededFor && dog.fundsNeededFor.length > 0 && (
-                <div className="w-full mt-4">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3 text-center">
-                    Funds Needed For:
-                  </h3>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    {dog.fundsNeededFor.map((item: any, index: number) => {
-                      const itemKey =
-                        typeof item === "string" ? item : item.label || `item-${index}`;
-                      const itemLabel = typeof item === "string" ? item : item.label || item;
-                      const itemIcon =
-                        typeof item === "string"
-                          ? iconMap[item] || "❤️"
-                          : item.icon || iconMap[item.label] || "❤️";
-
-                      return (
-                        <div
-                          key={itemKey}
-                          className="flex items-center gap-2 px-3 py-2 rounded-full border border-primary/30 bg-white/80 backdrop-blur-sm shadow-sm"
-                        >
-                          <span className="text-base md:text-lg">{itemIcon}</span>
-                          <span className="text-xs md:text-sm font-medium text-gray-700">
-                            {itemLabel}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
 

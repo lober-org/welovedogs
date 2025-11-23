@@ -1,32 +1,21 @@
 # Contracts: Build, Test, Deploy, and Invoke
 
-This guide walks you through building, testing, deploying, and invoking the smart contracts in this workspace using the Stellar CLI (v23+).
+This guide walks you through building, testing, deploying, and invoking the smart contracts in this workspace using the Stellar CLI.
 
 Contracts in this folder:
 
-- `contracts/increment`
-- `contracts/events-increment`
-- `contracts/fungible-token`
-- `contracts/non-fungible-token`
-- `contracts/hello-world`
-- `contracts/starter`
+- `contracts/donation` - Donation tracking contract for recording USDC donations
+- `contracts/pod-poap` - Proof of Donation NFT contract (POAP-style commemorative tokens)
 
 ## Prerequisites
 
 - Rust & Cargo
-- Stellar CLI (v23+)
+- Stellar CLI
   - Install: `cargo install --locked stellar-cli --features opt`
 - WASM target
-  - New target (recommended for v23): `rustup target add wasm32v1-none`
+  - Install: `rustup target add wasm32-unknown-unknown`
 - Testnet account funded via Friendbot
-  - You’ll need a public key `G...` and secret key `S...` on Testnet.
-
-Official docs for reference:
-
-- Storage example (increment, storage TTL): [Stellar Docs: Storage](https://developers.stellar.org/docs/build/smart-contracts/example-contracts/storage)
-- Events example: [Stellar Docs: Events](https://developers.stellar.org/docs/build/smart-contracts/example-contracts/events)
-- Fungible Token example: [Stellar Docs: Fungible Token](https://developers.stellar.org/docs/build/smart-contracts/example-contracts/fungible-token)
-- Non-Fungible Token example: [Stellar Docs: Non-Fungible Token](https://developers.stellar.org/docs/build/smart-contracts/example-contracts/non-fungible-token)
+  - You'll need a public key `G...` and secret key `S...` on Testnet.
 
 ## Environment Setup (Testnet)
 
@@ -52,7 +41,7 @@ You can build contracts individually or all in a loop.
 - Build one contract:
 
 ```bash
-cd contracts/contracts/increment
+cd contracts/contracts/donation
 stellar contract build
 ```
 
@@ -63,14 +52,21 @@ cd contracts
 for d in contracts/*; do (cd "$d" && stellar contract build); done
 ```
 
-WASM output (v23) is placed under `target/wasm32v1-none/release/<crate_name>.wasm` inside each contract directory.
+Or use npm scripts:
+
+```bash
+cd contracts
+npm run build
+```
+
+WASM output is placed under `target/wasm32-unknown-unknown/release/<crate_name>.wasm` inside each contract directory.
 
 ## Test
 
 - Test one contract:
 
 ```bash
-cd contracts/contracts/fungible-token
+cd contracts/contracts/donation
 cargo test
 ```
 
@@ -81,13 +77,20 @@ cd contracts
 for d in contracts/*; do (cd "$d" && cargo test); done
 ```
 
+Or use npm scripts:
+
+```bash
+cd contracts
+npm run test
+```
+
 ## Deploy (Testnet)
 
 General pattern:
 
 ```bash
 stellar contract deploy \
-  --wasm target/wasm32v1-none/release/<crate_name>.wasm \
+  --wasm target/wasm32-unknown-unknown/release/<crate_name>.wasm \
   --network testnet \
   --source $SECRET_KEY
 ```
@@ -96,48 +99,49 @@ Copy the resulting Contract ID printed by the CLI for subsequent invocations.
 
 ### Examples
 
-- Increment
+- Donation Contract
 
 ```bash
-cd contracts/contracts/increment
+cd contracts/contracts/donation
 stellar contract build
 CONTRACT_ID=$(stellar contract deploy \
-  --wasm target/wasm32v1-none/release/increment.wasm \
+  --wasm target/wasm32-unknown-unknown/release/donation.wasm \
   --network testnet \
   --source $SECRET_KEY | tail -n 1)
 ```
 
-- Events Increment
+After deployment, initialize the contract:
 
 ```bash
-cd contracts/contracts/events-increment
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --network testnet \
+  --source $SECRET_KEY \
+  -- \
+  initialize
+```
+
+- POD POAP Contract
+
+```bash
+cd contracts/contracts/pod-poap
 stellar contract build
 CONTRACT_ID=$(stellar contract deploy \
-  --wasm target/wasm32v1-none/release/events-increment.wasm \
+  --wasm target/wasm32-unknown-unknown/release/pod_poap.wasm \
   --network testnet \
   --source $SECRET_KEY | tail -n 1)
 ```
 
-- Fungible Token
+After deployment, initialize the contract with an owner:
 
 ```bash
-cd contracts/contracts/fungible-token
-stellar contract build
-CONTRACT_ID=$(stellar contract deploy \
-  --wasm target/wasm32v1-none/release/fungible-token.wasm \
+stellar contract invoke \
+  --id $CONTRACT_ID \
   --network testnet \
-  --source $SECRET_KEY | tail -n 1)
-```
-
-- Non-Fungible Token
-
-```bash
-cd contracts/contracts/non-fungible-token
-stellar contract build
-CONTRACT_ID=$(stellar contract deploy \
-  --wasm target/wasm32v1-none/release/non-fungible-token.wasm \
-  --network testnet \
-  --source $SECRET_KEY | tail -n 1)
+  --source $SECRET_KEY \
+  -- \
+  __constructor \
+  --owner $PUBLIC_KEY
 ```
 
 > Note: Capturing `CONTRACT_ID` with `tail -n 1` is a convenience. If the output format differs, copy the printed ID manually.
@@ -155,22 +159,9 @@ stellar contract invoke \
   <fn_name> [--arg1 value1] [--arg2 value2] ...
 ```
 
-### Increment
+### Donation Contract
 
-- Call increment:
-
-```bash
-stellar contract invoke \
-  --id $CONTRACT_ID \
-  --network testnet \
-  --source $SECRET_KEY \
-  -- \
-  increment
-```
-
-### Events Increment
-
-- Call increment (emits an event):
+- Initialize the contract:
 
 ```bash
 stellar contract invoke \
@@ -178,12 +169,106 @@ stellar contract invoke \
   --network testnet \
   --source $SECRET_KEY \
   -- \
-  increment
+  initialize
 ```
 
-### Fungible Token (minimal example)
+- Record a donation (donor must authorize):
 
-- Mint (admin auth required):
+```bash
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --network testnet \
+  --source $DONOR_SECRET_KEY \
+  -- \
+  donate \
+  --donor G_DONOR_PUBLIC_KEY \
+  --recipient G_RECIPIENT_PUBLIC_KEY \
+  --amount 1000000000 \
+  --asset G_USDC_CONTRACT_ADDRESS
+```
+
+With memo:
+
+```bash
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --network testnet \
+  --source $DONOR_SECRET_KEY \
+  -- \
+  donate \
+  --donor G_DONOR_PUBLIC_KEY \
+  --recipient G_RECIPIENT_PUBLIC_KEY \
+  --amount 1000000000 \
+  --asset G_USDC_CONTRACT_ADDRESS \
+  --memo "Thank you for rescuing dogs!"
+```
+
+- Get donation count:
+
+```bash
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --network testnet \
+  --source $SECRET_KEY \
+  -- \
+  donation_count
+```
+
+- Get a specific donation:
+
+```bash
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --network testnet \
+  --source $SECRET_KEY \
+  -- \
+  get_donation \
+  --donation_id 0
+```
+
+- Get total donated to a recipient:
+
+```bash
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --network testnet \
+  --source $SECRET_KEY \
+  -- \
+  total_donated \
+  --recipient G_RECIPIENT_PUBLIC_KEY
+```
+
+- Get donations by donor:
+
+```bash
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --network testnet \
+  --source $SECRET_KEY \
+  -- \
+  get_donor_donations \
+  --donor G_DONOR_PUBLIC_KEY \
+  --limit 10
+```
+
+- Get donations by recipient:
+
+```bash
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  --network testnet \
+  --source $SECRET_KEY \
+  -- \
+  get_recipient_donations \
+  --recipient G_RECIPIENT_PUBLIC_KEY \
+  --limit 10
+```
+
+### POD POAP Contract
+
+The POD POAP contract uses OpenZeppelin Stellar Soroban Contracts and follows standard NFT patterns.
+
+- Mint a token (owner only):
 
 ```bash
 stellar contract invoke \
@@ -192,26 +277,11 @@ stellar contract invoke \
   --source $SECRET_KEY \
   -- \
   mint \
-  --admin $PUBLIC_KEY \
-  --to G_ALICE_PUBLIC_KEY \
-  --amount 100
+  --to G_RECIPIENT_PUBLIC_KEY \
+  --caller $PUBLIC_KEY
 ```
 
-- Transfer (from auth required):
-
-```bash
-stellar contract invoke \
-  --id $CONTRACT_ID \
-  --network testnet \
-  --source S_ALICE_SECRET_KEY \
-  -- \
-  transfer \
-  --from G_ALICE_PUBLIC_KEY \
-  --to G_BOB_PUBLIC_KEY \
-  --amount 40
-```
-
-- Balance:
+- Set token URI (owner only):
 
 ```bash
 stellar contract invoke \
@@ -219,26 +289,13 @@ stellar contract invoke \
   --network testnet \
   --source $SECRET_KEY \
   -- \
-  balance \
-  --id G_ALICE_PUBLIC_KEY
+  set_token_uri \
+  --token_id 0 \
+  --uri "https://pod.example/api/pod-poap/metadata/0" \
+  --caller $PUBLIC_KEY
 ```
 
-### Non-Fungible Token (minimal example)
-
-- Mint (admin auth required):
-
-```bash
-stellar contract invoke \
-  --id $CONTRACT_ID \
-  --network testnet \
-  --source $SECRET_KEY \
-  -- \
-  mint \
-  --admin $PUBLIC_KEY \
-  --to G_ALICE_PUBLIC_KEY
-```
-
-- Owner Of:
+- Get owner of token:
 
 ```bash
 stellar contract invoke \
@@ -250,30 +307,40 @@ stellar contract invoke \
   --id 0
 ```
 
-- Transfer (from auth required):
+- Transfer token:
 
 ```bash
 stellar contract invoke \
   --id $CONTRACT_ID \
   --network testnet \
-  --source S_ALICE_SECRET_KEY \
+  --source $OWNER_SECRET_KEY \
   -- \
   transfer \
-  --from G_ALICE_PUBLIC_KEY \
-  --to G_BOB_PUBLIC_KEY \
+  --from G_OWNER_PUBLIC_KEY \
+  --to G_RECIPIENT_PUBLIC_KEY \
   --id 0
 ```
+
+For more information about OpenZeppelin Stellar Soroban Contracts, see the [official documentation](https://developers.stellar.org/docs/tools/openzeppelin-contracts).
 
 ## Optimize (optional, for production)
 
 ```bash
 # Run from each contract dir after build
-stellar contract optimize --wasm target/wasm32v1-none/release/<crate_name>.wasm
+stellar contract optimize --wasm target/wasm32-unknown-unknown/release/<crate_name>.wasm
+```
+
+Or use npm scripts:
+
+```bash
+cd contracts
+npm run optimize
 ```
 
 ## Tips & Troubleshooting
 
-- If build fails, ensure `rustup target add wasm32v1-none` is installed and you’re on `soroban-sdk = "23.0.3"`.
+- If build fails, ensure `rustup target add wasm32-unknown-unknown` is installed and you're on `soroban-sdk = "22.0.8"`.
 - For auth-required methods, the `--source` key must be the account that needs to authorize the call.
-- Events: `events-increment` emits an event on each increment. You can inspect events via RPC provider tooling.
-- For deeper context on storage TTLs, events, and token interfaces, see the docs linked above.
+- The donation contract tracks donations but does not handle the actual asset transfer. The actual USDC transfer must be done via a Stellar payment operation in the same transaction that calls `donate()`.
+- POD POAP contract requires initialization with `__constructor` after deployment to set the owner and metadata.
+- For deeper context on Soroban contracts, see the [Stellar Developer Docs](https://developers.stellar.org/docs/build/smart-contracts).
